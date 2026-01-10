@@ -7,29 +7,18 @@
 # ============================================================================
 
 # Stage 1: Build
-FROM rust:1.75-alpine AS builder
+FROM rust:1.83-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache musl-dev
 
 WORKDIR /app
 
-# Copy manifests first for better caching
-COPY Cargo.toml Cargo.lock* ./
+# Copy all source files
+COPY Cargo.toml Cargo.lock* memory.rs ./
 
-# Create dummy src to cache dependencies
-RUN mkdir src && \
-    echo 'fn main() { println!("dummy"); }' > src/main.rs && \
-    cargo build --release && \
-    rm -rf src
-
-# Copy actual source code
-COPY memory.rs ./
-
-# Build for release (rename memory.rs to src/main.rs structure)
-RUN mkdir -p src && mv memory.rs src/main.rs && \
-    touch src/main.rs && \
-    cargo build --release
+# Build for release
+RUN cargo build --release
 
 # Stage 2: Runtime (minimal image)
 FROM alpine:3.19 AS runtime

@@ -286,7 +286,7 @@ cargo test
 # test tests::test_delete_entities ... ok
 # test tests::test_concurrent_access ... ok      # 10 threads
 # test tests::test_concurrent_read_write ... ok  # 5 readers + 3 writers
-# 
+#
 # test result: ok. 6 passed; 0 failed
 ```
 

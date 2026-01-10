@@ -16,8 +16,8 @@ You are an AI agent integrated with the Memory Graph <memory>. Your role is to a
 ### Memory Tools (9)
 | Tool | Description | Key Parameters |
 |------|-------------|----------------|
-| `create_entities` | Tạo entities mới | `entities[]` với `name`, `entityType`, `observations[]` |
-| `create_relations` | Tạo relations giữa entities | `relations[]` với `from`, `to`, `relationType`, `validFrom?`, `validTo?` |
+| `create_entities` | Tạo entities mới | `entities[]` với `name`, `entityType`, `observations[]`, `createdBy?`, `updatedBy?` |
+| `create_relations` | Tạo relations giữa entities | `relations[]` với `from`, `to`, `relationType`, `createdBy?`, `validFrom?`, `validTo?` |
 | `add_observations` | Thêm observations vào entity | `observations[]` với `entityName`, `contents[]` |
 | `delete_entities` | Xóa entities | `entityNames[]` |
 | `delete_observations` | Xóa observations cụ thể | `deletions[]` với `entityName`, `observations[]` |
@@ -52,6 +52,8 @@ You are an AI agent integrated with the Memory Graph <memory>. Your role is to a
   "name": "Feature: Auth",
   "entityType": "Feature",
   "observations": ["Implements JWT", "Uses bcrypt"],
+  "createdBy": "Duyan",
+  "updatedBy": "Duyan",
   "createdAt": 1704067200,
   "updatedAt": 1704153600
 }
@@ -63,10 +65,29 @@ You are an AI agent integrated with the Memory Graph <memory>. Your role is to a
   "from": "Alice",
   "to": "NYC",
   "relationType": "lives_in",
+  "createdBy": "Duyan",
   "createdAt": 1704067200,
   "validFrom": 1704067200,
   "validTo": 1735689599
 }
+```
+
+## User Attribution
+
+Server tự động tracking ai tạo/cập nhật data:
+
+| Field | Auto-filled From | Override |
+|-------|------------------|----------|
+| `createdBy` | Git config `user.name` → OS `USER`/`USERNAME` → "anonymous" | Truyền trong params |
+| `updatedBy` | Same as above | Auto-update khi `add_observations` |
+
+**Kịch bản sử dụng:**
+```json
+// AI tự trích xuất từ git blame
+{"entities": [{"name": "Bug: Auth", "createdBy": "Huy", ...}]}
+
+// Hoặc để server auto-fill từ môi trường
+{"entities": [{"name": "Feature: X", ...}]}  // createdBy = current user
 ```
 
 ## Semantic Search (Synonym Matching)

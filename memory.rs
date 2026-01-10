@@ -9,6 +9,7 @@ use std::env;
 use std::fs;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
+use std::process::Command;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -65,6 +66,34 @@ fn current_timestamp() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs()
+}
+
+/// Get current user from git config or OS environment
+fn get_current_user() -> String {
+    // 1. Try Git Config (preferred for project context)
+    if let Ok(output) = Command::new("git").args(["config", "user.name"]).output() {
+        if output.status.success() {
+            let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !name.is_empty() {
+                return name;
+            }
+        }
+    }
+
+    // 2. Try OS Environment Variable
+    env::var("USER") // Linux/Mac
+        .or_else(|_| env::var("USERNAME")) // Windows
+        .unwrap_or_else(|_| "anonymous".to_string())
+}
+
+/// Default user for serde deserialization
+fn default_user() -> String {
+    "system".to_string()
+}
+
+/// Check if string is empty or "system" (for skip_serializing_if)
+fn is_default_user(val: &str) -> bool {
+    val.is_empty() || val == "system"
 }
 
 // ============================================================================
@@ -153,6 +182,10 @@ pub struct Entity {
     pub entity_type: String,
     #[serde(default)]
     pub observations: Vec<String>,
+    #[serde(rename = "createdBy", default = "default_user", skip_serializing_if = "is_default_user")]
+    pub created_by: String,
+    #[serde(rename = "updatedBy", default = "default_user", skip_serializing_if = "is_default_user")]
+    pub updated_by: String,
     #[serde(rename = "createdAt", default, skip_serializing_if = "is_zero")]
     pub created_at: u64,
     #[serde(rename = "updatedAt", default, skip_serializing_if = "is_zero")]
@@ -170,6 +203,8 @@ pub struct Relation {
     pub to: String,
     #[serde(rename = "relationType")]
     pub relation_type: String,
+    #[serde(rename = "createdBy", default = "default_user", skip_serializing_if = "is_default_user")]
+    pub created_by: String,
     #[serde(rename = "createdAt", default, skip_serializing_if = "is_zero")]
     pub created_at: u64,
     #[serde(rename = "validFrom", default, skip_serializing_if = "Option::is_none")]
@@ -339,6 +374,7 @@ pub trait Tool: Send + Sync {
 pub struct KnowledgeBase {
     memory_file_path: String,
     graph: Mutex<KnowledgeGraph>,
+    current_user: String,
 }
 
 impl KnowledgeBase {
@@ -357,12 +393,16 @@ impl KnowledgeBase {
             Err(_) => default_memory_path.to_string_lossy().to_string(),
         };
 
+        // Detect current user once at startup
+        let current_user = get_current_user();
+
         // Load graph from file at startup (or create empty if not exists)
         let graph = Self::load_graph_from_file(&memory_file_path).unwrap_or_default();
 
         Self {
             memory_file_path,
             graph: Mutex::new(graph),
+            current_user,
         }
     }
 
@@ -435,6 +475,13 @@ impl KnowledgeBase {
         let mut created = Vec::new();
         for mut entity in entities {
             if !existing_names.contains(&entity.name) {
+                // Auto-fill user info if not provided
+                if entity.created_by.is_empty() || entity.created_by == "system" {
+                    entity.created_by = self.current_user.clone();
+                }
+                if entity.updated_by.is_empty() || entity.updated_by == "system" {
+                    entity.updated_by = self.current_user.clone();
+                }
                 entity.created_at = now;
                 entity.updated_at = now;
                 created.push(entity.clone());
@@ -462,6 +509,10 @@ impl KnowledgeBase {
             if entity_names.contains(&relation.from) && entity_names.contains(&relation.to) {
                 let key = format!("{}|{}|{}", relation.from, relation.to, relation.relation_type);
                 if !existing_relations.contains(&key) {
+                    // Auto-fill user info if not provided
+                    if relation.created_by.is_empty() || relation.created_by == "system" {
+                        relation.created_by = self.current_user.clone();
+                    }
                     relation.created_at = now;
                     created.push(relation.clone());
                     graph.relations.push(relation);
@@ -493,6 +544,7 @@ impl KnowledgeBase {
 
                 if !new_contents.is_empty() {
                     entity.updated_at = now;
+                    entity.updated_by = self.current_user.clone();
                     added.push(Observation {
                         entity_name: obs.entity_name.clone(),
                         contents: new_contents,
@@ -977,7 +1029,9 @@ impl Tool for CreateEntitiesTool {
                                     "type": "array",
                                     "items": { "type": "string" },
                                     "description": "Initial observations about the entity"
-                                }
+                                },
+                                "createdBy": { "type": "string", "description": "Who created this entity (auto-filled from git/env if not provided)" },
+                                "updatedBy": { "type": "string", "description": "Who last updated this entity (auto-filled from git/env if not provided)" }
                             },
                             "required": ["name", "entityType"]
                         }
@@ -1042,7 +1096,8 @@ impl Tool for CreateRelationsTool {
                             "properties": {
                                 "from": { "type": "string", "description": "The source entity name" },
                                 "to": { "type": "string", "description": "The target entity name" },
-                                "relationType": { "type": "string", "description": "The type of relation" }
+                                "relationType": { "type": "string", "description": "The type of relation" },
+                                "createdBy": { "type": "string", "description": "Who created this relation (auto-filled from git/env if not provided)" }
                             },
                             "required": ["from", "to", "relationType"]
                         }
@@ -2157,6 +2212,7 @@ mod tests {
         let kb = KnowledgeBase {
             memory_file_path: temp_file.clone(),
             graph: Mutex::new(KnowledgeGraph::default()),
+            current_user: "test_user".to_string(),
         };
         (kb, temp_file)
     }
@@ -2174,6 +2230,8 @@ mod tests {
                 name: "Alice".to_string(),
                 entity_type: "Person".to_string(),
                 observations: vec!["Lives in NYC".to_string()],
+                created_by: String::new(),
+                updated_by: String::new(),
                 created_at: 0,
                 updated_at: 0,
             },
@@ -2181,6 +2239,8 @@ mod tests {
                 name: "Bob".to_string(),
                 entity_type: "Person".to_string(),
                 observations: vec![],
+                created_by: String::new(),
+                updated_by: String::new(),
                 created_at: 0,
                 updated_at: 0,
             },
@@ -2188,6 +2248,9 @@ mod tests {
 
         let created = kb.create_entities(entities).unwrap();
         assert_eq!(created.len(), 2);
+        // Verify user was auto-filled
+        assert_eq!(created[0].created_by, "test_user");
+        assert_eq!(created[0].updated_by, "test_user");
 
         let graph = kb.read_graph(None, None).unwrap();
         assert_eq!(graph.entities.len(), 2);
@@ -2205,6 +2268,8 @@ mod tests {
                 name: "Alice".to_string(),
                 entity_type: "Person".to_string(),
                 observations: vec![],
+                created_by: String::new(),
+                updated_by: String::new(),
                 created_at: 0,
                 updated_at: 0,
             },
@@ -2212,6 +2277,8 @@ mod tests {
                 name: "Bob".to_string(),
                 entity_type: "Person".to_string(),
                 observations: vec![],
+                created_by: String::new(),
+                updated_by: String::new(),
                 created_at: 0,
                 updated_at: 0,
             },
@@ -2224,6 +2291,7 @@ mod tests {
                 from: "Alice".to_string(),
                 to: "Bob".to_string(),
                 relation_type: "knows".to_string(),
+                created_by: String::new(),
                 created_at: 0,
                 valid_from: None,
                 valid_to: None,
@@ -2232,6 +2300,8 @@ mod tests {
 
         let created = kb.create_relations(relations).unwrap();
         assert_eq!(created.len(), 1);
+        // Verify user was auto-filled
+        assert_eq!(created[0].created_by, "test_user");
 
         let graph = kb.read_graph(None, None).unwrap();
         assert_eq!(graph.relations.len(), 1);
@@ -2248,6 +2318,8 @@ mod tests {
                 name: "Alice".to_string(),
                 entity_type: "Person".to_string(),
                 observations: vec!["Software Engineer".to_string()],
+                created_by: String::new(),
+                updated_by: String::new(),
                 created_at: 0,
                 updated_at: 0,
             },
@@ -2255,6 +2327,8 @@ mod tests {
                 name: "Bob".to_string(),
                 entity_type: "Person".to_string(),
                 observations: vec!["Doctor".to_string()],
+                created_by: String::new(),
+                updated_by: String::new(),
                 created_at: 0,
                 updated_at: 0,
             },
@@ -2281,6 +2355,8 @@ mod tests {
                 name: "Alice".to_string(),
                 entity_type: "Person".to_string(),
                 observations: vec![],
+                created_by: String::new(),
+                updated_by: String::new(),
                 created_at: 0,
                 updated_at: 0,
             },
@@ -2288,6 +2364,8 @@ mod tests {
                 name: "Bob".to_string(),
                 entity_type: "Person".to_string(),
                 observations: vec![],
+                created_by: String::new(),
+                updated_by: String::new(),
                 created_at: 0,
                 updated_at: 0,
             },
@@ -2322,6 +2400,8 @@ mod tests {
                     name: format!("Agent{}", i),
                     entity_type: "Person".to_string(),
                     observations: vec![format!("Created by thread {}", i)],
+                    created_by: String::new(),
+                    updated_by: String::new(),
                     created_at: 0,
                     updated_at: 0,
                 };
@@ -2371,6 +2451,8 @@ mod tests {
                 name: format!("Entity{}", i),
                 entity_type: "Module".to_string(),
                 observations: vec![],
+                created_by: String::new(),
+                updated_by: String::new(),
                 created_at: 0,
                 updated_at: 0,
             };
