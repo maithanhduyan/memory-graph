@@ -1,2 +1,38 @@
 {"name":"Alice","entityType":"Person","observations":["Software Engineer","Lives in NYC","Loves coding","Age 28"]}
 {"name":"Bob","entityType":"Person","observations":["Doctor","Works at hospital","Age 32"]}
+{"name":"Memory Graph MCP Server","entityType":"Project","observations":["Dự án giúp AI Agent quản lý dự án phần mềm tốt hơn","Chống ảo giác (fact anchoring) bằng knowledge graph","Đảm bảo độ chính xác qua thời gian","Sử dụng Rust làm ngôn ngữ chính","Lưu trữ dữ liệu bằng JSONL format","Tuân thủ giao thức MCP (Model Context Protocol)","Có 9 memory tools: create_entities, create_relations, add_observations, delete_entities, delete_observations, delete_relations, read_graph, search_nodes, open_nodes"]}
+{"name":"tiach","entityType":"Developer","observations":["Là developer chính của dự án Memory Graph","Mục tiêu: xây dựng hệ thống giúp AI không quên thông tin quan trọng"]}
+{"name":"Feature: Create Entities","entityType":"Feature","observations":["Mô tả: Tạo mới entities trong knowledge graph","Status: Completed","Priority: High","File: memory.rs - function create_entities"]}
+{"name":"Feature: Create Relations","entityType":"Feature","observations":["Mô tả: Tạo quan hệ giữa các entities","Status: Completed","Priority: High","File: memory.rs - function create_relations"]}
+{"name":"Feature: Search Nodes","entityType":"Feature","observations":["Mô tả: Tìm kiếm entities theo query text","Status: Completed","Priority: High","File: memory.rs - function search_nodes"]}
+{"name":"Feature: Persistent Storage","entityType":"Feature","observations":["Mô tả: Lưu trữ dữ liệu vào file JSONL","Status: Completed","Priority: Critical","File: memory.jsonl"]}
+{"name":"Decision: Use JSONL Format","entityType":"Decision","observations":["Quyết định: Sử dụng JSONL thay vì SQLite","Lý do: Đơn giản, human-readable, dễ debug","Trade-offs: Query chậm hơn với dataset lớn (>100K entities)","Ngày: 2026-01-10","Quyết định bởi: tiach"]}
+{"name":"Decision: Use Rust","entityType":"Decision","observations":["Quyết định: Sử dụng Rust làm ngôn ngữ chính","Lý do: Performance cao, memory safety, single binary deployment","Trade-offs: Learning curve cao hơn Python/Node.js","Ngày: 2026-01-10","Quyết định bởi: tiach"]}
+{"name":"Milestone: MVP Release","entityType":"Milestone","observations":["Mô tả: Release phiên bản MVP với 9 tools cơ bản","Target date: 2026-01-15","Deliverables: Binary, Documentation, Basic Tests","Status: In Progress"]}
+{"name":"Milestone: Production Ready","entityType":"Milestone","observations":["Mô tả: Phiên bản ổn định cho production","Target date: 2026-02-01","Deliverables: Full test coverage, Performance benchmarks, User guide","Status: Planned"]}
+{"name":"Requirement: Unicode Support","entityType":"Requirement","observations":["Mô tả: Hỗ trợ Unicode trong entity name và observations","Type: Functional","Priority: High","Status: Implemented"]}
+{"name":"Requirement: MCP Compliance","entityType":"Requirement","observations":["Mô tả: Tuân thủ Model Context Protocol specification","Type: Functional","Priority: Critical","Status: Implemented"]}
+{"name":"Risk: JSONL Scalability","entityType":"Risk","observations":["Mô tả: Performance degradation với >100K entities","Impact: Medium","Probability: Low (most use cases < 10K entities)","Mitigation: Implement indexing hoặc optional SQLite backend","Status: Accepted"]}
+{"name":"Risk: Memory Usage","entityType":"Risk","observations":["Mô tả: RAM usage cao khi load toàn bộ graph vào memory","Impact: Medium","Probability: Low","Mitigation: Implement lazy loading hoặc streaming","Status: Monitoring"]}
+{"from":"tiach","to":"Memory Graph MCP Server","relationType":"develops"}
+{"from":"Memory Graph MCP Server","to":"Feature: Create Entities","relationType":"implements"}
+{"from":"Memory Graph MCP Server","to":"Feature: Create Relations","relationType":"implements"}
+{"from":"Memory Graph MCP Server","to":"Feature: Search Nodes","relationType":"implements"}
+{"from":"Memory Graph MCP Server","to":"Feature: Persistent Storage","relationType":"implements"}
+{"from":"tiach","to":"Feature: Create Entities","relationType":"owns"}
+{"from":"tiach","to":"Feature: Create Relations","relationType":"owns"}
+{"from":"tiach","to":"Feature: Search Nodes","relationType":"owns"}
+{"from":"tiach","to":"Feature: Persistent Storage","relationType":"owns"}
+{"from":"tiach","to":"Decision: Use JSONL Format","relationType":"made"}
+{"from":"tiach","to":"Decision: Use Rust","relationType":"made"}
+{"from":"Decision: Use JSONL Format","to":"Feature: Persistent Storage","relationType":"affects"}
+{"from":"Decision: Use Rust","to":"Memory Graph MCP Server","relationType":"affects"}
+{"from":"Milestone: MVP Release","to":"Feature: Create Entities","relationType":"includes"}
+{"from":"Milestone: MVP Release","to":"Feature: Create Relations","relationType":"includes"}
+{"from":"Milestone: MVP Release","to":"Feature: Search Nodes","relationType":"includes"}
+{"from":"Milestone: MVP Release","to":"Feature: Persistent Storage","relationType":"includes"}
+{"from":"Requirement: Unicode Support","to":"Feature: Create Entities","relationType":"satisfied_by"}
+{"from":"Requirement: MCP Compliance","to":"Memory Graph MCP Server","relationType":"satisfied_by"}
+{"from":"Risk: JSONL Scalability","to":"Milestone: Production Ready","relationType":"threatens"}
+{"from":"Risk: Memory Usage","to":"Milestone: Production Ready","relationType":"threatens"}
+{"from":"Risk: JSONL Scalability","to":"Decision: Use JSONL Format","relationType":"related_to"}
