@@ -18,6 +18,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub type McpResult<T> = Result<T, Box<dyn std::error::Error>>;
 
+/// Get current Unix timestamp in seconds
+fn current_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
 /// Entity in the knowledge graph
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entity {
@@ -26,6 +34,14 @@ pub struct Entity {
     pub entity_type: String,
     #[serde(default)]
     pub observations: Vec<String>,
+    #[serde(rename = "createdAt", default, skip_serializing_if = "is_zero")]
+    pub created_at: u64,
+    #[serde(rename = "updatedAt", default, skip_serializing_if = "is_zero")]
+    pub updated_at: u64,
+}
+
+fn is_zero(val: &u64) -> bool {
+    *val == 0
 }
 
 /// Relation between entities
@@ -35,6 +51,8 @@ pub struct Relation {
     pub to: String,
     #[serde(rename = "relationType")]
     pub relation_type: String,
+    #[serde(rename = "createdAt", default, skip_serializing_if = "is_zero")]
+    pub created_at: u64,
 }
 
 /// Knowledge graph containing entities and relations
@@ -284,10 +302,14 @@ impl KnowledgeBase {
     pub fn create_entities(&self, entities: Vec<Entity>) -> McpResult<Vec<Entity>> {
         let mut graph = self.load_graph()?;
         let existing_names: HashSet<String> = graph.entities.iter().map(|e| e.name.clone()).collect();
+        let now = current_timestamp();
 
         let mut created = Vec::new();
-        for entity in entities {
+        for mut entity in entities {
             if !existing_names.contains(&entity.name) {
+                // Set timestamps for new entity
+                entity.created_at = now;
+                entity.updated_at = now;
                 created.push(entity.clone());
                 graph.entities.push(entity);
             }
@@ -301,6 +323,7 @@ impl KnowledgeBase {
     pub fn create_relations(&self, relations: Vec<Relation>) -> McpResult<Vec<Relation>> {
         let mut graph = self.load_graph()?;
         let entity_names: HashSet<String> = graph.entities.iter().map(|e| e.name.clone()).collect();
+        let now = current_timestamp();
 
         let existing_relations: HashSet<String> = graph.relations
             .iter()
@@ -308,11 +331,13 @@ impl KnowledgeBase {
             .collect();
 
         let mut created = Vec::new();
-        for relation in relations {
+        for mut relation in relations {
             // Only create relation if both entities exist and relation doesn't already exist
             if entity_names.contains(&relation.from) && entity_names.contains(&relation.to) {
                 let key = format!("{}|{}|{}", relation.from, relation.to, relation.relation_type);
                 if !existing_relations.contains(&key) {
+                    // Set timestamp for new relation
+                    relation.created_at = now;
                     created.push(relation.clone());
                     graph.relations.push(relation);
                 }
@@ -327,6 +352,7 @@ impl KnowledgeBase {
     pub fn add_observations(&self, observations: Vec<Observation>) -> McpResult<Vec<Observation>> {
         let mut graph = self.load_graph()?;
         let mut added = Vec::new();
+        let now = current_timestamp();
 
         for obs in observations {
             if let Some(entity) = graph.entities.iter_mut().find(|e| e.name == obs.entity_name) {
@@ -341,6 +367,8 @@ impl KnowledgeBase {
                 }
 
                 if !new_contents.is_empty() {
+                    // Update the entity's updatedAt timestamp
+                    entity.updated_at = now;
                     added.push(Observation {
                         entity_name: obs.entity_name.clone(),
                         contents: new_contents,
@@ -1769,11 +1797,15 @@ mod tests {
                 name: "Alice".to_string(),
                 entity_type: "Person".to_string(),
                 observations: vec!["Lives in NYC".to_string()],
+                created_at: 0,
+                updated_at: 0,
             },
             Entity {
                 name: "Bob".to_string(),
                 entity_type: "Person".to_string(),
                 observations: vec![],
+                created_at: 0,
+                updated_at: 0,
             },
         ];
 
@@ -1796,11 +1828,15 @@ mod tests {
                 name: "Alice".to_string(),
                 entity_type: "Person".to_string(),
                 observations: vec![],
+                created_at: 0,
+                updated_at: 0,
             },
             Entity {
                 name: "Bob".to_string(),
                 entity_type: "Person".to_string(),
                 observations: vec![],
+                created_at: 0,
+                updated_at: 0,
             },
         ];
         kb.create_entities(entities).unwrap();
@@ -1811,6 +1847,7 @@ mod tests {
                 from: "Alice".to_string(),
                 to: "Bob".to_string(),
                 relation_type: "knows".to_string(),
+                created_at: 0,
             },
         ];
 
@@ -1832,11 +1869,15 @@ mod tests {
                 name: "Alice".to_string(),
                 entity_type: "Person".to_string(),
                 observations: vec!["Software Engineer".to_string()],
+                created_at: 0,
+                updated_at: 0,
             },
             Entity {
                 name: "Bob".to_string(),
                 entity_type: "Person".to_string(),
                 observations: vec!["Doctor".to_string()],
+                created_at: 0,
+                updated_at: 0,
             },
         ];
         kb.create_entities(entities).unwrap();
@@ -1861,11 +1902,15 @@ mod tests {
                 name: "Alice".to_string(),
                 entity_type: "Person".to_string(),
                 observations: vec![],
+                created_at: 0,
+                updated_at: 0,
             },
             Entity {
                 name: "Bob".to_string(),
                 entity_type: "Person".to_string(),
                 observations: vec![],
+                created_at: 0,
+                updated_at: 0,
             },
         ];
         kb.create_entities(entities).unwrap();
