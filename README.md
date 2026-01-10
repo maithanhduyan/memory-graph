@@ -5,6 +5,7 @@
 [![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange?logo=rust)](https://www.rust-lang.org/)
 [![MCP](https://img.shields.io/badge/MCP-2024--11--05-blue)](https://modelcontextprotocol.io/)
 [![Build](https://github.com/maithanhduyan/memory-graph/actions/workflows/rust.yml/badge.svg)](https://github.com/maithanhduyan/memory-graph/actions/workflows/rust.yml)
+[![Release](https://github.com/maithanhduyan/memory-graph/actions/workflows/release.yml/badge.svg)](https://github.com/maithanhduyan/memory-graph/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/maithanhduyan/memory-graph?style=social)](https://github.com/maithanhduyan/memory-graph)
 
