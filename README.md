@@ -119,7 +119,3 @@ Run the tests with:
 ```bash
 cargo test
 ```
-
-## License
-
-MIT

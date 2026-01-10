@@ -44,7 +44,7 @@ fn is_zero(val: &u64) -> bool {
     *val == 0
 }
 
-/// Relation between entities
+/// Relation between entities with temporal validity
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Relation {
     pub from: String,
@@ -53,6 +53,10 @@ pub struct Relation {
     pub relation_type: String,
     #[serde(rename = "createdAt", default, skip_serializing_if = "is_zero")]
     pub created_at: u64,
+    #[serde(rename = "validFrom", default, skip_serializing_if = "Option::is_none")]
+    pub valid_from: Option<u64>,
+    #[serde(rename = "validTo", default, skip_serializing_if = "Option::is_none")]
+    pub valid_to: Option<u64>,
 }
 
 /// Knowledge graph containing entities and relations
@@ -430,17 +434,34 @@ impl KnowledgeBase {
         Ok(())
     }
 
-    /// Read entire graph
-    pub fn read_graph(&self) -> McpResult<KnowledgeGraph> {
-        self.load_graph()
+    /// Read graph with optional pagination
+    pub fn read_graph(&self, limit: Option<usize>, offset: Option<usize>) -> McpResult<KnowledgeGraph> {
+        let graph = self.load_graph()?;
+
+        let offset = offset.unwrap_or(0);
+
+        let entities: Vec<Entity> = if let Some(lim) = limit {
+            graph.entities.into_iter().skip(offset).take(lim).collect()
+        } else {
+            graph.entities.into_iter().skip(offset).collect()
+        };
+
+        let entity_names: HashSet<String> = entities.iter().map(|e| e.name.clone()).collect();
+
+        let relations: Vec<Relation> = graph.relations
+            .into_iter()
+            .filter(|r| entity_names.contains(&r.from) || entity_names.contains(&r.to))
+            .collect();
+
+        Ok(KnowledgeGraph { entities, relations })
     }
 
-    /// Search nodes by query
-    pub fn search_nodes(&self, query: &str) -> McpResult<KnowledgeGraph> {
+    /// Search nodes by query with optional limit and relation inclusion
+    pub fn search_nodes(&self, query: &str, limit: Option<usize>, include_relations: bool) -> McpResult<KnowledgeGraph> {
         let graph = self.load_graph()?;
         let query_lower = query.to_lowercase();
 
-        let matching_entities: Vec<Entity> = graph.entities
+        let mut matching_entities: Vec<Entity> = graph.entities
             .into_iter()
             .filter(|e| {
                 e.name.to_lowercase().contains(&query_lower) ||
@@ -449,12 +470,20 @@ impl KnowledgeBase {
             })
             .collect();
 
-        let entity_names: HashSet<String> = matching_entities.iter().map(|e| e.name.clone()).collect();
+        // Apply limit if specified
+        if let Some(lim) = limit {
+            matching_entities.truncate(lim);
+        }
 
-        let matching_relations: Vec<Relation> = graph.relations
-            .into_iter()
-            .filter(|r| entity_names.contains(&r.from) || entity_names.contains(&r.to))
-            .collect();
+        let matching_relations = if include_relations {
+            let entity_names: HashSet<String> = matching_entities.iter().map(|e| e.name.clone()).collect();
+            graph.relations
+                .into_iter()
+                .filter(|r| entity_names.contains(&r.from) || entity_names.contains(&r.to))
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         Ok(KnowledgeGraph {
             entities: matching_entities,
@@ -747,6 +776,51 @@ impl KnowledgeBase {
                 Some(by_priority)
             },
         })
+    }
+
+    /// Get relations valid at a specific point in time
+    pub fn get_relations_at_time(&self, timestamp: Option<u64>, entity_name: Option<&str>) -> McpResult<Vec<Relation>> {
+        let graph = self.load_graph()?;
+        let check_time = timestamp.unwrap_or_else(current_timestamp);
+
+        let relations: Vec<Relation> = graph.relations
+            .into_iter()
+            .filter(|r| {
+                // Filter by entity if specified
+                if let Some(name) = entity_name {
+                    if r.from != name && r.to != name {
+                        return false;
+                    }
+                }
+
+                // Check temporal validity
+                let valid_from_ok = match r.valid_from {
+                    Some(vf) => check_time >= vf,
+                    None => true, // No start time means always valid from past
+                };
+
+                let valid_to_ok = match r.valid_to {
+                    Some(vt) => check_time <= vt,
+                    None => true, // No end time means still valid
+                };
+
+                valid_from_ok && valid_to_ok
+            })
+            .collect();
+
+        Ok(relations)
+    }
+
+    /// Get historical relations (including expired ones)
+    pub fn get_relation_history(&self, entity_name: &str) -> McpResult<Vec<Relation>> {
+        let graph = self.load_graph()?;
+
+        let relations: Vec<Relation> = graph.relations
+            .into_iter()
+            .filter(|r| r.from == entity_name || r.to == entity_name)
+            .collect();
+
+        Ok(relations)
     }
 }
 
@@ -1083,21 +1157,39 @@ impl Tool for ReadGraphTool {
     fn definition(&self) -> McpTool {
         McpTool {
             name: "read_graph".to_string(),
-            description: "Read the entire knowledge graph".to_string(),
+            description: "Read the knowledge graph with optional pagination. Use limit/offset to avoid context overflow with large graphs.".to_string(),
             input_schema: json!({
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of entities to return. Recommended: 50-100 for large graphs"
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Number of entities to skip (for pagination)"
+                    }
+                },
                 "required": []
             }),
         }
     }
 
-    fn execute(&self, _params: Value) -> McpResult<Value> {
-        let graph = self.kb.read_graph()?;
+    fn execute(&self, params: Value) -> McpResult<Value> {
+        let limit = params.get("limit").and_then(|v| v.as_u64()).map(|v| v as usize);
+        let offset = params.get("offset").and_then(|v| v.as_u64()).map(|v| v as usize);
+        let graph = self.kb.read_graph(limit, offset)?;
+
+        let total_msg = if limit.is_some() || offset.is_some() {
+            format!(" (showing {} entities)", graph.entities.len())
+        } else {
+            String::new()
+        };
+
         Ok(json!({
             "content": [{
                 "type": "text",
-                "text": serde_json::to_string_pretty(&graph)?
+                "text": format!("{}{}", serde_json::to_string_pretty(&graph)?, total_msg)
             }]
         }))
     }
@@ -1119,13 +1211,21 @@ impl Tool for SearchNodesTool {
     fn definition(&self) -> McpTool {
         McpTool {
             name: "search_nodes".to_string(),
-            description: "Search for nodes in the knowledge graph based on a query".to_string(),
+            description: "Search for nodes in the knowledge graph. Returns matching entities with optional relations.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
                         "description": "The search query to match against entity names, types, and observations"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of entities to return (default: no limit)"
+                    },
+                    "includeRelations": {
+                        "type": "boolean",
+                        "description": "Whether to include relations connected to matching entities (default: true)"
                     }
                 },
                 "required": ["query"]
@@ -1137,7 +1237,12 @@ impl Tool for SearchNodesTool {
         let query = params.get("query")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let graph = self.kb.search_nodes(query)?;
+        let limit = params.get("limit").and_then(|v| v.as_u64()).map(|v| v as usize);
+        let include_relations = params.get("includeRelations")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+
+        let graph = self.kb.search_nodes(query, limit, include_relations)?;
         Ok(json!({
             "content": [{
                 "type": "text",
@@ -1512,6 +1617,128 @@ fn get_month_name(month: u32) -> &'static str {
     }
 }
 
+// ----------------------------------------------------------------------------
+// Temporal Query Tools
+// ----------------------------------------------------------------------------
+
+pub struct GetRelationsAtTimeTool {
+    kb: std::sync::Arc<KnowledgeBase>,
+}
+
+impl GetRelationsAtTimeTool {
+    pub fn new(kb: std::sync::Arc<KnowledgeBase>) -> Self {
+        Self { kb }
+    }
+}
+
+impl Tool for GetRelationsAtTimeTool {
+    fn definition(&self) -> McpTool {
+        McpTool {
+            name: "get_relations_at_time".to_string(),
+            description: "Get relations that are valid at a specific point in time. Useful for querying historical state of the knowledge graph.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "timestamp": {
+                        "type": "integer",
+                        "description": "Unix timestamp to query. If not provided, uses current time."
+                    },
+                    "entityName": {
+                        "type": "string",
+                        "description": "Optional: filter relations involving this entity"
+                    }
+                },
+                "required": []
+            }),
+        }
+    }
+
+    fn execute(&self, params: Value) -> McpResult<Value> {
+        let timestamp = params.get("timestamp").and_then(|v| v.as_u64());
+        let entity_name = params.get("entityName").and_then(|v| v.as_str());
+        
+        let relations = self.kb.get_relations_at_time(timestamp, entity_name)?;
+        
+        Ok(json!({
+            "content": [{
+                "type": "text",
+                "text": serde_json::to_string_pretty(&json!({
+                    "queryTime": timestamp.unwrap_or_else(current_timestamp),
+                    "relations": relations
+                }))?
+            }]
+        }))
+    }
+}
+
+pub struct GetRelationHistoryTool {
+    kb: std::sync::Arc<KnowledgeBase>,
+}
+
+impl GetRelationHistoryTool {
+    pub fn new(kb: std::sync::Arc<KnowledgeBase>) -> Self {
+        Self { kb }
+    }
+}
+
+impl Tool for GetRelationHistoryTool {
+    fn definition(&self) -> McpTool {
+        McpTool {
+            name: "get_relation_history".to_string(),
+            description: "Get all relations (current and historical) for an entity. Shows temporal validity (validFrom/validTo) for each relation.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "entityName": {
+                        "type": "string",
+                        "description": "The name of the entity to get relation history for"
+                    }
+                },
+                "required": ["entityName"]
+            }),
+        }
+    }
+
+    fn execute(&self, params: Value) -> McpResult<Value> {
+        let entity_name = params.get("entityName")
+            .and_then(|v| v.as_str())
+            .ok_or("entityName is required")?;
+        
+        let relations = self.kb.get_relation_history(entity_name)?;
+        let current_time = current_timestamp();
+        
+        // Mark each relation as current or historical
+        let annotated: Vec<Value> = relations.iter().map(|r| {
+            let is_current = match (r.valid_from, r.valid_to) {
+                (Some(vf), Some(vt)) => current_time >= vf && current_time <= vt,
+                (Some(vf), None) => current_time >= vf,
+                (None, Some(vt)) => current_time <= vt,
+                (None, None) => true,
+            };
+            
+            json!({
+                "from": r.from,
+                "to": r.to,
+                "relationType": r.relation_type,
+                "validFrom": r.valid_from,
+                "validTo": r.valid_to,
+                "isCurrent": is_current
+            })
+        }).collect();
+        
+        Ok(json!({
+            "content": [{
+                "type": "text",
+                "text": serde_json::to_string_pretty(&json!({
+                    "entity": entity_name,
+                    "currentTime": current_time,
+                    "relations": annotated
+                }))?
+            }]
+        }))
+    }
+}
+
 pub struct GetCurrentTimeTool;
 
 impl GetCurrentTimeTool {
@@ -1741,7 +1968,7 @@ fn main() -> McpResult<()> {
 
     let mut server = McpServer::with_info(server_info);
 
-    // Register all 9 memory tools + 3 query tools + 1 time tool
+    // Register all 9 memory tools + 3 query tools + 2 temporal tools + 1 time tool
     server.register_tool(Box::new(CreateEntitiesTool::new(kb.clone())));
     server.register_tool(Box::new(CreateRelationsTool::new(kb.clone())));
     server.register_tool(Box::new(AddObservationsTool::new(kb.clone())));
@@ -1751,10 +1978,13 @@ fn main() -> McpResult<()> {
     server.register_tool(Box::new(ReadGraphTool::new(kb.clone())));
     server.register_tool(Box::new(SearchNodesTool::new(kb.clone())));
     server.register_tool(Box::new(OpenNodesTool::new(kb.clone())));
-    // New query tools
+    // Query tools
     server.register_tool(Box::new(GetRelatedTool::new(kb.clone())));
     server.register_tool(Box::new(TraverseTool::new(kb.clone())));
     server.register_tool(Box::new(SummarizeTool::new(kb.clone())));
+    // Temporal tools
+    server.register_tool(Box::new(GetRelationsAtTimeTool::new(kb.clone())));
+    server.register_tool(Box::new(GetRelationHistoryTool::new(kb.clone())));
     // Time tool
     server.register_tool(Box::new(GetCurrentTimeTool::new()));
 
@@ -1812,7 +2042,7 @@ mod tests {
         let created = kb.create_entities(entities).unwrap();
         assert_eq!(created.len(), 2);
 
-        let graph = kb.read_graph().unwrap();
+        let graph = kb.read_graph(None, None).unwrap();
         assert_eq!(graph.entities.len(), 2);
 
         cleanup(&temp_file);
@@ -1848,13 +2078,15 @@ mod tests {
                 to: "Bob".to_string(),
                 relation_type: "knows".to_string(),
                 created_at: 0,
+                valid_from: None,
+                valid_to: None,
             },
         ];
 
         let created = kb.create_relations(relations).unwrap();
         assert_eq!(created.len(), 1);
 
-        let graph = kb.read_graph().unwrap();
+        let graph = kb.read_graph(None, None).unwrap();
         assert_eq!(graph.relations.len(), 1);
 
         cleanup(&temp_file);
@@ -1882,11 +2114,11 @@ mod tests {
         ];
         kb.create_entities(entities).unwrap();
 
-        let result = kb.search_nodes("Alice").unwrap();
+        let result = kb.search_nodes("Alice", None, true).unwrap();
         assert_eq!(result.entities.len(), 1);
         assert_eq!(result.entities[0].name, "Alice");
 
-        let result = kb.search_nodes("Engineer").unwrap();
+        let result = kb.search_nodes("Engineer", None, true).unwrap();
         assert_eq!(result.entities.len(), 1);
         assert_eq!(result.entities[0].name, "Alice");
 
@@ -1917,7 +2149,7 @@ mod tests {
 
         kb.delete_entities(vec!["Alice".to_string()]).unwrap();
 
-        let graph = kb.read_graph().unwrap();
+        let graph = kb.read_graph(None, None).unwrap();
         assert_eq!(graph.entities.len(), 1);
         assert_eq!(graph.entities[0].name, "Bob");
 
