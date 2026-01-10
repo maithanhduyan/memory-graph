@@ -185,8 +185,26 @@ Memory updated ✓
 | `Milestone` | Mốc dự án | "v1.0 Release" |
 | `Risk` | Rủi ro | "Risk: Scale Limit" |
 | `Convention` | Coding standards | "Naming Convention" |
-| `Schema` | Data structures | "User Schema" |
+| `Schema` | Data structures | "User Schema" || `Person` | Người dùng/Team | "John Doe", "Backend Team" |
 
+## Relation Types Reference
+
+| Type | Description | Example |
+|------|-------------|--------|
+| `contains` | A chứa B | Project contains Module |
+| `implements` | A triển khai B | Module implements Feature |
+| `fixes` | A sửa B | Commit fixes Bug |
+| `caused_by` | A gây ra bởi B | Bug caused_by Decision |
+| `depends_on` | A phụ thuộc B | Feature depends_on Feature |
+| `blocked_by` | A bị chặn bởi B | Task blocked_by Bug |
+| `assigned_to` | A được giao cho B | Bug assigned_to Person |
+| `part_of` | A là phần của B | Module part_of Project |
+| `relates_to` | A liên quan B | Generic relation |
+| `supersedes` | A thay thế B | Decision supersedes Decision |
+| `affects` | A ảnh hưởng B | Bug affects Module |
+| `requires` | A yêu cầu B | Feature requires Requirement |
+
+> **Note**: Server sẽ trả về warning nếu dùng type không chuẩn. Vẫn cho phép custom types nhưng khuyến khích dùng standard types.
 ## Improvement Suggestions
 
 ### Đã implement ✅

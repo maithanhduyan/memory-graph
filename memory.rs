@@ -18,6 +18,47 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub type McpResult<T> = Result<T, Box<dyn std::error::Error>>;
 
+// ============================================================================
+// Standard Entity & Relation Types (Soft Validation)
+// ============================================================================
+
+/// Standard entity types for software project management
+const STANDARD_ENTITY_TYPES: &[&str] = &[
+    "Project", "Module", "Feature", "Bug", "Decision",
+    "Requirement", "Milestone", "Risk", "Convention", "Schema", "Person",
+];
+
+/// Standard relation types for software project management
+const STANDARD_RELATION_TYPES: &[&str] = &[
+    "contains", "implements", "fixes", "caused_by", "depends_on",
+    "blocked_by", "assigned_to", "part_of", "relates_to", "supersedes",
+    "affects", "requires",
+];
+
+/// Check if entity type is standard, return warning if not
+fn validate_entity_type(entity_type: &str) -> Option<String> {
+    if STANDARD_ENTITY_TYPES.iter().any(|&t| t.eq_ignore_ascii_case(entity_type)) {
+        None
+    } else {
+        Some(format!(
+            "⚠️ Non-standard entityType '{}'. Recommended: {:?}",
+            entity_type, STANDARD_ENTITY_TYPES
+        ))
+    }
+}
+
+/// Check if relation type is standard, return warning if not
+fn validate_relation_type(relation_type: &str) -> Option<String> {
+    if STANDARD_RELATION_TYPES.iter().any(|&t| t.eq_ignore_ascii_case(relation_type)) {
+        None
+    } else {
+        Some(format!(
+            "⚠️ Non-standard relationType '{}'. Recommended: {:?}",
+            relation_type, STANDARD_RELATION_TYPES
+        ))
+    }
+}
+
 /// Get current Unix timestamp in seconds
 fn current_timestamp() -> u64 {
     SystemTime::now()
@@ -952,11 +993,24 @@ impl Tool for CreateEntitiesTool {
         let entities: Vec<Entity> = serde_json::from_value(
             params.get("entities").cloned().unwrap_or(json!([]))
         )?;
+
+        // Collect warnings for non-standard types
+        let warnings: Vec<String> = entities.iter()
+            .filter_map(|e| validate_entity_type(&e.entity_type))
+            .collect();
+
         let created = self.kb.create_entities(entities)?;
+
+        let response = if warnings.is_empty() {
+            serde_json::to_string_pretty(&created)?
+        } else {
+            format!("{}\n\n{}", serde_json::to_string_pretty(&created)?, warnings.join("\n"))
+        };
+
         Ok(json!({
             "content": [{
                 "type": "text",
-                "text": serde_json::to_string_pretty(&created)?
+                "text": response
             }]
         }))
     }
@@ -1004,11 +1058,24 @@ impl Tool for CreateRelationsTool {
         let relations: Vec<Relation> = serde_json::from_value(
             params.get("relations").cloned().unwrap_or(json!([]))
         )?;
+
+        // Collect warnings for non-standard relation types
+        let warnings: Vec<String> = relations.iter()
+            .filter_map(|r| validate_relation_type(&r.relation_type))
+            .collect();
+
         let created = self.kb.create_relations(relations)?;
+
+        let response = if warnings.is_empty() {
+            serde_json::to_string_pretty(&created)?
+        } else {
+            format!("{}\n\n{}", serde_json::to_string_pretty(&created)?, warnings.join("\n"))
+        };
+
         Ok(json!({
             "content": [{
                 "type": "text",
-                "text": serde_json::to_string_pretty(&created)?
+                "text": response
             }]
         }))
     }
