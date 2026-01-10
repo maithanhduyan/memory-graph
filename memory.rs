@@ -26,6 +26,84 @@ fn current_timestamp() -> u64 {
         .as_secs()
 }
 
+// ============================================================================
+// Synonym Dictionary for Semantic Search
+// ============================================================================
+
+/// Synonym groups - words in same group are considered semantically similar
+const SYNONYM_GROUPS: &[&[&str]] = &[
+    // Developer roles
+    &["coder", "programmer", "developer", "engineer", "dev", "software engineer", "software developer"],
+    &["frontend", "front-end", "ui developer", "client-side"],
+    &["backend", "back-end", "server-side", "api developer"],
+    &["fullstack", "full-stack", "full stack"],
+    &["devops", "sre", "infrastructure", "platform engineer"],
+
+    // Bug/Issue related
+    &["bug", "issue", "defect", "error", "problem", "fault", "glitch"],
+    &["fix", "patch", "hotfix", "bugfix", "repair", "resolve"],
+
+    // Feature/Task related
+    &["feature", "functionality", "capability", "enhancement"],
+    &["task", "ticket", "work item", "story", "user story"],
+    &["requirement", "spec", "specification", "req"],
+
+    // Status
+    &["done", "completed", "finished", "resolved", "closed"],
+    &["pending", "waiting", "blocked", "on hold"],
+    &["in progress", "wip", "ongoing", "active", "working"],
+    &["todo", "to do", "planned", "backlog"],
+
+    // Priority
+    &["critical", "urgent", "p0", "blocker", "showstopper"],
+    &["high", "important", "p1"],
+    &["medium", "normal", "p2"],
+    &["low", "minor", "p3"],
+
+    // Project management
+    &["milestone", "release", "version", "sprint"],
+    &["deadline", "due date", "target date"],
+    &["project", "repo", "repository", "codebase"],
+
+    // Documentation
+    &["doc", "docs", "documentation", "readme", "guide"],
+    &["api", "interface", "endpoint"],
+
+    // Testing
+    &["test", "testing", "qa", "quality assurance"],
+    &["unit test", "unittest"],
+    &["integration test", "e2e", "end-to-end"],
+
+    // Architecture
+    &["module", "component", "service", "package"],
+    &["database", "db", "datastore", "storage"],
+    &["cache", "caching", "redis", "memcached"],
+];
+
+/// Get all synonyms for a query term
+fn get_synonyms(query: &str) -> Vec<String> {
+    let query_lower = query.to_lowercase();
+    let mut synonyms = vec![query_lower.clone()];
+
+    for group in SYNONYM_GROUPS {
+        if group.iter().any(|&word| word == query_lower || query_lower.contains(word) || word.contains(&query_lower)) {
+            for &word in *group {
+                if !synonyms.contains(&word.to_string()) {
+                    synonyms.push(word.to_string());
+                }
+            }
+        }
+    }
+
+    synonyms
+}
+
+/// Check if text matches any of the search terms (including synonyms)
+fn matches_with_synonyms(text: &str, search_terms: &[String]) -> bool {
+    let text_lower = text.to_lowercase();
+    search_terms.iter().any(|term| text_lower.contains(term))
+}
+
 /// Entity in the knowledge graph
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entity {
@@ -456,17 +534,19 @@ impl KnowledgeBase {
         Ok(KnowledgeGraph { entities, relations })
     }
 
-    /// Search nodes by query with optional limit and relation inclusion
+    /// Search nodes by query with synonym expansion, optional limit and relation inclusion
     pub fn search_nodes(&self, query: &str, limit: Option<usize>, include_relations: bool) -> McpResult<KnowledgeGraph> {
         let graph = self.load_graph()?;
-        let query_lower = query.to_lowercase();
+
+        // Expand query with synonyms for semantic matching
+        let search_terms = get_synonyms(query);
 
         let mut matching_entities: Vec<Entity> = graph.entities
             .into_iter()
             .filter(|e| {
-                e.name.to_lowercase().contains(&query_lower) ||
-                e.entity_type.to_lowercase().contains(&query_lower) ||
-                e.observations.iter().any(|o| o.to_lowercase().contains(&query_lower))
+                matches_with_synonyms(&e.name, &search_terms) ||
+                matches_with_synonyms(&e.entity_type, &search_terms) ||
+                e.observations.iter().any(|o| matches_with_synonyms(o, &search_terms))
             })
             .collect();
 
@@ -1656,9 +1736,9 @@ impl Tool for GetRelationsAtTimeTool {
     fn execute(&self, params: Value) -> McpResult<Value> {
         let timestamp = params.get("timestamp").and_then(|v| v.as_u64());
         let entity_name = params.get("entityName").and_then(|v| v.as_str());
-        
+
         let relations = self.kb.get_relations_at_time(timestamp, entity_name)?;
-        
+
         Ok(json!({
             "content": [{
                 "type": "text",
@@ -1703,10 +1783,10 @@ impl Tool for GetRelationHistoryTool {
         let entity_name = params.get("entityName")
             .and_then(|v| v.as_str())
             .ok_or("entityName is required")?;
-        
+
         let relations = self.kb.get_relation_history(entity_name)?;
         let current_time = current_timestamp();
-        
+
         // Mark each relation as current or historical
         let annotated: Vec<Value> = relations.iter().map(|r| {
             let is_current = match (r.valid_from, r.valid_to) {
@@ -1715,7 +1795,7 @@ impl Tool for GetRelationHistoryTool {
                 (None, Some(vt)) => current_time <= vt,
                 (None, None) => true,
             };
-            
+
             json!({
                 "from": r.from,
                 "to": r.to,
@@ -1725,7 +1805,7 @@ impl Tool for GetRelationHistoryTool {
                 "isCurrent": is_current
             })
         }).collect();
-        
+
         Ok(json!({
             "content": [{
                 "type": "text",

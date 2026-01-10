@@ -11,65 +11,196 @@ You are an AI agent integrated with the Memory Graph <memory>. Your role is to a
 - Cung cấp hướng dẫn chi tiết về cách xây dựng, chạy và sử dụng máy chủ MCP trong môi trường phát triển như VSCode.
 - Hỗ trợ phát triển các tính năng mới và sửa lỗi trong mã nguồn Rust của dự án.
 
-## Features
-- **9 Memory Tools**:
-  - `create_entities` - Create new entities in the knowledge graph
-  - `create_relations` - Create relations between entities
-  - `add_observations` - Add observations to existing entities
-  - `delete_entities` - Delete entities from the graph
-  - `delete_observations` - Delete specific observations from entities
-  - `delete_relations` - Delete relations from the graph
-  - `read_graph` - Read the entire knowledge graph
-  - `search_nodes` - Search for nodes by query
-  - `open_nodes` - Open specific nodes by name
+## Features - 15 Tools
+
+### Memory Tools (9)
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `create_entities` | Tạo entities mới | `entities[]` với `name`, `entityType`, `observations[]` |
+| `create_relations` | Tạo relations giữa entities | `relations[]` với `from`, `to`, `relationType`, `validFrom?`, `validTo?` |
+| `add_observations` | Thêm observations vào entity | `observations[]` với `entityName`, `contents[]` |
+| `delete_entities` | Xóa entities | `entityNames[]` |
+| `delete_observations` | Xóa observations cụ thể | `deletions[]` với `entityName`, `observations[]` |
+| `delete_relations` | Xóa relations | `relations[]` |
+| `read_graph` | Đọc graph với pagination | `limit?`, `offset?` |
+| `search_nodes` | Tìm kiếm với synonym matching | `query`, `limit?`, `includeRelations?` |
+| `open_nodes` | Mở nodes theo tên | `names[]` |
+
+### Query Tools (3)
+| Tool | Description | Use Case |
+|------|-------------|----------|
+| `get_related` | Lấy entities liên quan | Tìm dependencies, xem connections |
+| `traverse` | Duyệt graph theo path pattern | Multi-hop queries, tìm indirect relations |
+| `summarize` | Tóm tắt entities | Overview nhanh, statistics |
+
+### Temporal Tools (2)
+| Tool | Description | Use Case |
+|------|-------------|----------|
+| `get_relations_at_time` | Query relations hợp lệ tại timestamp | "Alice ở đâu năm 2024?" |
+| `get_relation_history` | Xem toàn bộ lịch sử relations | Track changes over time |
+
+### Utility Tools (1)
+| Tool | Description |
+|------|-------------|
+| `get_current_time` | Lấy timestamp hiện tại |
+
+## Data Model
+
+### Entity Structure
+```json
+{
+  "name": "Feature: Auth",
+  "entityType": "Feature",
+  "observations": ["Implements JWT", "Uses bcrypt"],
+  "createdAt": 1704067200,
+  "updatedAt": 1704153600
+}
+```
+
+### Relation Structure (with Temporal Support)
+```json
+{
+  "from": "Alice",
+  "to": "NYC",
+  "relationType": "lives_in",
+  "createdAt": 1704067200,
+  "validFrom": 1704067200,
+  "validTo": 1735689599
+}
+```
+
+## Semantic Search (Synonym Matching)
+
+Search tự động expand với synonyms:
+
+| Search Query | Also Matches |
+|--------------|--------------|
+| `coder` | programmer, developer, engineer, dev |
+| `bug` | issue, defect, error, problem |
+| `done` | completed, finished, resolved |
+| `critical` | urgent, p0, blocker |
+
+**Tip**: Không cần lo về từ vựng chính xác, search sẽ tìm semantic equivalents.
+
+## Best Practices
+
+### 1. Pagination cho Large Graphs
+```json
+// Đừng: read toàn bộ graph
+{"tool": "read_graph", "params": {}}
+
+// Nên: dùng pagination
+{"tool": "read_graph", "params": {"limit": 50, "offset": 0}}
+```
+
+### 2. Temporal Relations cho Data Changes
+```json
+// Khi data thay đổi, ĐỪNG xóa relation cũ
+// Thay vào đó, set validTo và tạo relation mới
+
+// Alice chuyển từ NYC sang Tokyo
+// Step 1: Update relation cũ với validTo
+// Step 2: Tạo relation mới với validFrom
+{
+  "from": "Alice", "to": "Tokyo",
+  "relationType": "lives_in",
+  "validFrom": 1735689600
+}
+```
+
+### 3. Search với includeRelations
+```json
+// Khi chỉ cần entities (faster):
+{"tool": "search_nodes", "params": {"query": "Bug", "includeRelations": false}}
+
+// Khi cần context đầy đủ:
+{"tool": "search_nodes", "params": {"query": "Bug", "includeRelations": true}}
+```
 
 ## Workflow
-1. **Understanding Requirements**: Analyze the developer's requests and understand the context of the Memory Graph MCP Server.
-2. **Code Suggestions**: Provide code snippets, functions, or modules that align with the project's architecture and coding standards.
-3. **Documentation**: Generate or update documentation to reflect new features or changes in the codebase.
-4. **Testing**: Suggest test cases or testing strategies to ensure code quality and reliability.
-5. **Feedback Loop**: Continuously learn from developer feedback to improve future suggestions and assistance.
 
 ### 1. Khi bắt đầu dự án mới:
 AI Agent nên:
-1. Scan project structure → tạo Module entities
-2. Đọc README, docs → tạo Convention, Decision entities
-3. Đọc schema files → tạo Schema entities
-4. Hỏi user về business rules → tạo BusinessRule entities
+1. `read_graph(limit: 100)` → scan existing context
+2. Scan project structure → `create_entities` cho Modules
+3. Đọc README, docs → `create_entities` cho Conventions, Decisions
+4. Đọc schema files → `create_entities` cho Schemas
+5. Hỏi user về business rules → `create_entities` cho BusinessRules
 
 ### 2. Khi phát triển tính năng mới:
-AI Agent nên:
-1. Trước khi code: search Memory để lấy context
-2. Khi discover something new: add_observations
-3. Khi tạo file/module mới: create_entities
-4. Khi fix bug: lưu Bug entity với root cause
-5. Khi make decision: lưu Decision entity với reasoning
+1. **Trước khi code**: `search_nodes` để lấy context
+2. **Khi discover something new**: `add_observations`
+3. **Khi tạo file/module mới**: `create_entities`
+4. **Khi fix bug**: tạo Bug entity với root cause
+5. **Khi make decision**: tạo Decision entity với reasoning
 
 ### 3. Khi switch context:
+```
 User: "Giờ làm feature X trong module Y"
 
 AI Agent:
 1. open_nodes(["Module: Y"]) → dependencies, patterns
 2. search_nodes("Y") → related files, schemas
-3. Có đủ context để tiếp tục mà không hỏi lại
+3. get_related("Module: Y") → xem connections
+4. Có đủ context để tiếp tục mà không hỏi lại
+```
 
+### 4. Khi query historical data:
+```
+User: "Alice làm việc ở đâu năm 2024?"
 
+AI Agent:
+1. get_relations_at_time(timestamp: 1704067200, entityName: "Alice")
+2. Trả về relations hợp lệ tại thời điểm đó
+```
 
-Flow hoạt động chuẩn của hệ thống quản lý bộ nhớ:
+## Flow hoạt động chuẩn
+
 ```
 Goal
 ↓
-Decision
+search_nodes() → get context
 ↓
-Action
+Decision → create_entities(Decision)
 ↓
-Observation
+Action → add_observations()
 ↓
-Error? → Fix → Lesson
+Error? → create_entities(Bug) → Fix → add_observations(Lesson)
 ↓
-Graph update
+Success → create_relations() với validFrom
 ↓
-Memory embedding
+Memory updated ✓
 ```
+
+## Entity Types Reference
+
+| Type | Purpose | Example |
+|------|---------|---------|
+| `Project` | Dự án chính | "Memory Graph MCP" |
+| `Module` | Thành phần code | "Auth Module" |
+| `Feature` | Tính năng | "Feature: Pagination" |
+| `Bug` | Lỗi đã fix | "Bug: Context Overflow" |
+| `Decision` | Quyết định thiết kế | "Decision: Use JSONL" |
+| `Requirement` | Yêu cầu | "Req: Multi-tenant" |
+| `Milestone` | Mốc dự án | "v1.0 Release" |
+| `Risk` | Rủi ro | "Risk: Scale Limit" |
+| `Convention` | Coding standards | "Naming Convention" |
+| `Schema` | Data structures | "User Schema" |
+
+## Improvement Suggestions
+
+### Đã implement ✅
+- [x] Pagination (`limit`/`offset`) cho large graphs
+- [x] Temporal relations (`validFrom`/`validTo`)
+- [x] Synonym matching cho semantic search
+- [x] Timestamps (`createdAt`/`updatedAt`)
+
+### Future Enhancements 🚀
+1. **Vector Embeddings**: Upgrade từ synonym matching sang true semantic search với embeddings
+2. **Graph Visualization**: Web UI để visualize knowledge graph
+3. **Auto-summarization**: Tự động tóm tắt entities khi graph quá lớn
+4. **Conflict Detection**: Phát hiện observations mâu thuẫn
+5. **Import/Export**: Sync với external knowledge bases
+6. **Multi-tenant**: Support nhiều projects trong 1 server
 
 **Important Note**: Always prioritize the integrity and efficiency of the knowledge graph when making suggestions or changes.
