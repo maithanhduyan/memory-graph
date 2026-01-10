@@ -1,4 +1,5 @@
 # Memory Graph MCP Server
+[![Rust](https://github.com/maithanhduyan/memory-graph/actions/workflows/rust.yml/badge.svg)](https://github.com/maithanhduyan/memory-graph/actions/workflows/rust.yml)
 
 A Knowledge Graph MCP (Model Context Protocol) server implemented in Rust with minimal dependencies.
 
