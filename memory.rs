@@ -335,8 +335,10 @@ pub trait Tool: Send + Sync {
 // Knowledge Base
 // ============================================================================
 
+/// Knowledge base with in-memory cache for thread-safe operations
 pub struct KnowledgeBase {
-    memory_file_path: Mutex<String>,
+    memory_file_path: String,
+    graph: Mutex<KnowledgeGraph>,
 }
 
 impl KnowledgeBase {
@@ -355,23 +357,22 @@ impl KnowledgeBase {
             Err(_) => default_memory_path.to_string_lossy().to_string(),
         };
 
+        // Load graph from file at startup (or create empty if not exists)
+        let graph = Self::load_graph_from_file(&memory_file_path).unwrap_or_default();
+
         Self {
-            memory_file_path: Mutex::new(memory_file_path),
+            memory_file_path,
+            graph: Mutex::new(graph),
         }
     }
 
-    fn get_memory_file_path(&self) -> String {
-        self.memory_file_path.lock().unwrap().clone()
-    }
-
-    fn load_graph(&self) -> McpResult<KnowledgeGraph> {
-        let file_path = self.get_memory_file_path();
-
-        if !Path::new(&file_path).exists() {
+    /// Load graph from file (static helper for initialization)
+    fn load_graph_from_file(file_path: &str) -> McpResult<KnowledgeGraph> {
+        if !Path::new(file_path).exists() {
             return Ok(KnowledgeGraph::default());
         }
 
-        let content = fs::read_to_string(&file_path)?;
+        let content = fs::read_to_string(file_path)?;
         let mut graph = KnowledgeGraph::default();
 
         for line in content.lines() {
@@ -397,11 +398,15 @@ impl KnowledgeBase {
         Ok(graph)
     }
 
-    fn save_graph(&self, graph: &KnowledgeGraph) -> McpResult<()> {
-        let file_path = self.get_memory_file_path();
+    /// Get a clone of the current graph (thread-safe read)
+    fn load_graph(&self) -> McpResult<KnowledgeGraph> {
+        Ok(self.graph.lock().unwrap().clone())
+    }
 
+    /// Persist graph to file (internal helper, expects caller to hold lock)
+    fn persist_to_file(&self, graph: &KnowledgeGraph) -> McpResult<()> {
         // Ensure parent directory exists
-        if let Some(parent) = Path::new(&file_path).parent() {
+        if let Some(parent) = Path::new(&self.memory_file_path).parent() {
             fs::create_dir_all(parent)?;
         }
 
@@ -417,20 +422,19 @@ impl KnowledgeBase {
             content.push('\n');
         }
 
-        fs::write(&file_path, content)?;
+        fs::write(&self.memory_file_path, content)?;
         Ok(())
     }
 
-    /// Create new entities
+    /// Create new entities (thread-safe: holds lock during entire operation)
     pub fn create_entities(&self, entities: Vec<Entity>) -> McpResult<Vec<Entity>> {
-        let mut graph = self.load_graph()?;
+        let mut graph = self.graph.lock().unwrap();
         let existing_names: HashSet<String> = graph.entities.iter().map(|e| e.name.clone()).collect();
         let now = current_timestamp();
 
         let mut created = Vec::new();
         for mut entity in entities {
             if !existing_names.contains(&entity.name) {
-                // Set timestamps for new entity
                 entity.created_at = now;
                 entity.updated_at = now;
                 created.push(entity.clone());
@@ -438,13 +442,13 @@ impl KnowledgeBase {
             }
         }
 
-        self.save_graph(&graph)?;
+        self.persist_to_file(&graph)?;
         Ok(created)
     }
 
-    /// Create new relations
+    /// Create new relations (thread-safe: holds lock during entire operation)
     pub fn create_relations(&self, relations: Vec<Relation>) -> McpResult<Vec<Relation>> {
-        let mut graph = self.load_graph()?;
+        let mut graph = self.graph.lock().unwrap();
         let entity_names: HashSet<String> = graph.entities.iter().map(|e| e.name.clone()).collect();
         let now = current_timestamp();
 
@@ -455,11 +459,9 @@ impl KnowledgeBase {
 
         let mut created = Vec::new();
         for mut relation in relations {
-            // Only create relation if both entities exist and relation doesn't already exist
             if entity_names.contains(&relation.from) && entity_names.contains(&relation.to) {
                 let key = format!("{}|{}|{}", relation.from, relation.to, relation.relation_type);
                 if !existing_relations.contains(&key) {
-                    // Set timestamp for new relation
                     relation.created_at = now;
                     created.push(relation.clone());
                     graph.relations.push(relation);
@@ -467,13 +469,13 @@ impl KnowledgeBase {
             }
         }
 
-        self.save_graph(&graph)?;
+        self.persist_to_file(&graph)?;
         Ok(created)
     }
 
-    /// Add observations to entities
+    /// Add observations to entities (thread-safe: holds lock during entire operation)
     pub fn add_observations(&self, observations: Vec<Observation>) -> McpResult<Vec<Observation>> {
-        let mut graph = self.load_graph()?;
+        let mut graph = self.graph.lock().unwrap();
         let mut added = Vec::new();
         let now = current_timestamp();
 
@@ -490,7 +492,6 @@ impl KnowledgeBase {
                 }
 
                 if !new_contents.is_empty() {
-                    // Update the entity's updatedAt timestamp
                     entity.updated_at = now;
                     added.push(Observation {
                         entity_name: obs.entity_name.clone(),
@@ -500,29 +501,27 @@ impl KnowledgeBase {
             }
         }
 
-        self.save_graph(&graph)?;
+        self.persist_to_file(&graph)?;
         Ok(added)
     }
 
-    /// Delete entities
+    /// Delete entities (thread-safe: holds lock during entire operation)
     pub fn delete_entities(&self, entity_names: Vec<String>) -> McpResult<()> {
-        let mut graph = self.load_graph()?;
+        let mut graph = self.graph.lock().unwrap();
         let names_to_delete: HashSet<String> = entity_names.into_iter().collect();
 
         graph.entities.retain(|e| !names_to_delete.contains(&e.name));
-
-        // Also remove relations involving deleted entities
         graph.relations.retain(|r| {
             !names_to_delete.contains(&r.from) && !names_to_delete.contains(&r.to)
         });
 
-        self.save_graph(&graph)?;
+        self.persist_to_file(&graph)?;
         Ok(())
     }
 
-    /// Delete observations from entities
+    /// Delete observations from entities (thread-safe: holds lock during entire operation)
     pub fn delete_observations(&self, deletions: Vec<ObservationDeletion>) -> McpResult<()> {
-        let mut graph = self.load_graph()?;
+        let mut graph = self.graph.lock().unwrap();
 
         for deletion in deletions {
             if let Some(entity) = graph.entities.iter_mut().find(|e| e.name == deletion.entity_name) {
@@ -531,13 +530,13 @@ impl KnowledgeBase {
             }
         }
 
-        self.save_graph(&graph)?;
+        self.persist_to_file(&graph)?;
         Ok(())
     }
 
-    /// Delete relations
+    /// Delete relations (thread-safe: holds lock during entire operation)
     pub fn delete_relations(&self, relations: Vec<Relation>) -> McpResult<()> {
-        let mut graph = self.load_graph()?;
+        let mut graph = self.graph.lock().unwrap();
 
         let to_delete: HashSet<String> = relations
             .iter()
@@ -549,7 +548,7 @@ impl KnowledgeBase {
             !to_delete.contains(&key)
         });
 
-        self.save_graph(&graph)?;
+        self.persist_to_file(&graph)?;
         Ok(())
     }
 
@@ -2154,9 +2153,10 @@ mod tests {
         let id = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
         let temp_file = format!("test_memory_{}_{}.jsonl", std::process::id(), id);
 
-        // Create a KnowledgeBase with explicit file path
+        // Create a KnowledgeBase with explicit file path and empty graph
         let kb = KnowledgeBase {
-            memory_file_path: Mutex::new(temp_file.clone()),
+            memory_file_path: temp_file.clone(),
+            graph: Mutex::new(KnowledgeGraph::default()),
         };
         (kb, temp_file)
     }
@@ -2299,6 +2299,123 @@ mod tests {
         let graph = kb.read_graph(None, None).unwrap();
         assert_eq!(graph.entities.len(), 1);
         assert_eq!(graph.entities[0].name, "Bob");
+
+        cleanup(&temp_file);
+    }
+
+    #[test]
+    fn test_concurrent_access() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let (kb, temp_file) = setup_test_kb();
+        let kb = Arc::new(kb);
+
+        // Spawn multiple threads simulating concurrent agents
+        let mut handles = vec![];
+
+        for i in 0..10 {
+            let kb_clone = Arc::clone(&kb);
+            let handle = thread::spawn(move || {
+                // Each "agent" creates an entity
+                let entity = Entity {
+                    name: format!("Agent{}", i),
+                    entity_type: "Person".to_string(),
+                    observations: vec![format!("Created by thread {}", i)],
+                    created_at: 0,
+                    updated_at: 0,
+                };
+                kb_clone.create_entities(vec![entity]).unwrap();
+
+                // Each agent also reads the graph
+                let graph = kb_clone.read_graph(None, None).unwrap();
+                assert!(graph.entities.len() >= 1);
+
+                // Each agent adds an observation
+                let obs = Observation {
+                    entity_name: format!("Agent{}", i),
+                    contents: vec![format!("Observation from thread {}", i)],
+                };
+                let _ = kb_clone.add_observations(vec![obs]);
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all threads to complete
+        for handle in handles {
+            handle.join().expect("Thread panicked");
+        }
+
+        // Verify final state
+        let graph = kb.read_graph(None, None).unwrap();
+        assert_eq!(graph.entities.len(), 10, "All 10 entities should exist");
+
+        // Verify all entities have observations
+        for entity in &graph.entities {
+            assert!(entity.observations.len() >= 1, "Entity should have observations");
+        }
+
+        cleanup(&temp_file);
+    }
+
+    #[test]
+    fn test_concurrent_read_write() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let (kb, temp_file) = setup_test_kb();
+
+        // Pre-populate with some entities
+        for i in 0..5 {
+            let entity = Entity {
+                name: format!("Entity{}", i),
+                entity_type: "Module".to_string(),
+                observations: vec![],
+                created_at: 0,
+                updated_at: 0,
+            };
+            kb.create_entities(vec![entity]).unwrap();
+        }
+
+        let kb = Arc::new(kb);
+        let mut handles = vec![];
+
+        // 5 reader threads
+        for _ in 0..5 {
+            let kb_clone = Arc::clone(&kb);
+            let handle = thread::spawn(move || {
+                for _ in 0..100 {
+                    let graph = kb_clone.read_graph(None, None).unwrap();
+                    assert!(graph.entities.len() >= 5);
+                    let _ = kb_clone.search_nodes("Entity", None, true);
+                }
+            });
+            handles.push(handle);
+        }
+
+        // 3 writer threads
+        for i in 0..3 {
+            let kb_clone = Arc::clone(&kb);
+            let handle = thread::spawn(move || {
+                for j in 0..10 {
+                    let obs = Observation {
+                        entity_name: format!("Entity{}", i),
+                        contents: vec![format!("Update {} from writer {}", j, i)],
+                    };
+                    let _ = kb_clone.add_observations(vec![obs]);
+                }
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all threads
+        for handle in handles {
+            handle.join().expect("Thread panicked");
+        }
+
+        // Verify no data corruption
+        let graph = kb.read_graph(None, None).unwrap();
+        assert_eq!(graph.entities.len(), 5, "Original entities should still exist");
 
         cleanup(&temp_file);
     }

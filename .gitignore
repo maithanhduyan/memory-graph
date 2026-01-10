@@ -3,17 +3,22 @@
 debug/
 *.pdb
 
-# Cargo lock (optional, you can include this for binaries)
+# Cargo lock (optional - keep for reproducible builds)
 # Cargo.lock
 
 # IDE
 .idea/
 *.swp
 *.swo
+*~
 
-# Memory data files (can be included if you want to persist)
-# memory.jsonl
+# Memory data files (user data, not committed)
+memory.jsonl
+test_*.jsonl
 
 # OS files
 .DS_Store
 Thumbs.db
+
+# Logs
+*.log
