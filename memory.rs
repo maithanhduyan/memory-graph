@@ -62,6 +62,73 @@ pub struct ObservationDeletion {
     pub observations: Vec<String>,
 }
 
+/// Related entity with relation info
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelatedEntity {
+    #[serde(rename = "relationType")]
+    pub relation_type: String,
+    pub direction: String,
+    pub entity: Entity,
+}
+
+/// Result of get_related query
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelatedEntities {
+    pub entity: String,
+    pub relations: Vec<RelatedEntity>,
+}
+
+/// Path step for traverse query
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PathStep {
+    #[serde(rename = "relationType")]
+    pub relation_type: String,
+    pub direction: String,
+    #[serde(rename = "targetType")]
+    pub target_type: Option<String>,
+}
+
+/// Single path in traversal result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TraversalPath {
+    pub nodes: Vec<String>,
+    pub relations: Vec<String>,
+}
+
+/// Result of traverse query
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TraversalResult {
+    #[serde(rename = "startNode")]
+    pub start_node: String,
+    pub paths: Vec<TraversalPath>,
+    #[serde(rename = "endNodes")]
+    pub end_nodes: Vec<Entity>,
+}
+
+/// Summary statistics
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Summary {
+    #[serde(rename = "totalEntities")]
+    pub total_entities: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entities: Option<Vec<EntityBrief>>,
+    #[serde(rename = "byStatus", skip_serializing_if = "Option::is_none")]
+    pub by_status: Option<HashMap<String, usize>>,
+    #[serde(rename = "byType", skip_serializing_if = "Option::is_none")]
+    pub by_type: Option<HashMap<String, usize>>,
+    #[serde(rename = "byPriority", skip_serializing_if = "Option::is_none")]
+    pub by_priority: Option<HashMap<String, usize>>,
+}
+
+/// Brief entity info for summary
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntityBrief {
+    pub name: String,
+    #[serde(rename = "entityType")]
+    pub entity_type: String,
+    pub brief: String,
+}
+
 // ============================================================================
 // JSON-RPC Types
 // ============================================================================
@@ -387,6 +454,270 @@ impl KnowledgeBase {
         Ok(KnowledgeGraph {
             entities: matching_entities,
             relations: matching_relations,
+        })
+    }
+
+    /// Get related entities
+    pub fn get_related(
+        &self,
+        entity_name: &str,
+        relation_type: Option<&str>,
+        direction: &str,
+    ) -> McpResult<RelatedEntities> {
+        let graph = self.load_graph()?;
+        let mut related = Vec::new();
+
+        for relation in &graph.relations {
+            let matches = match direction {
+                "outgoing" => relation.from == entity_name,
+                "incoming" => relation.to == entity_name,
+                "both" => relation.from == entity_name || relation.to == entity_name,
+                _ => false,
+            };
+
+            if !matches {
+                continue;
+            }
+
+            if let Some(rt) = relation_type {
+                if relation.relation_type != rt {
+                    continue;
+                }
+            }
+
+            let target_name = if relation.from == entity_name {
+                &relation.to
+            } else {
+                &relation.from
+            };
+
+            if let Some(entity) = graph.entities.iter().find(|e| e.name == *target_name) {
+                related.push(RelatedEntity {
+                    relation_type: relation.relation_type.clone(),
+                    direction: if relation.from == entity_name {
+                        "outgoing".to_string()
+                    } else {
+                        "incoming".to_string()
+                    },
+                    entity: entity.clone(),
+                });
+            }
+        }
+
+        Ok(RelatedEntities {
+            entity: entity_name.to_string(),
+            relations: related,
+        })
+    }
+
+    /// Traverse graph following path pattern
+    pub fn traverse(
+        &self,
+        start: &str,
+        path: Vec<PathStep>,
+        max_results: usize,
+    ) -> McpResult<TraversalResult> {
+        let graph = self.load_graph()?;
+
+        // Track paths: (current_node, path_so_far, relations_so_far)
+        let mut current_paths: Vec<(String, Vec<String>, Vec<String>)> =
+            vec![(start.to_string(), vec![start.to_string()], vec![])];
+
+        for step in &path {
+            let mut next_paths = Vec::new();
+
+            for (node, nodes_path, rels_path) in &current_paths {
+                // Find related entities for this step
+                for relation in &graph.relations {
+                    let (matches, target_name) = match step.direction.as_str() {
+                        "out" => {
+                            if relation.from == *node && relation.relation_type == step.relation_type
+                            {
+                                (true, &relation.to)
+                            } else {
+                                (false, &relation.to)
+                            }
+                        }
+                        "in" => {
+                            if relation.to == *node && relation.relation_type == step.relation_type {
+                                (true, &relation.from)
+                            } else {
+                                (false, &relation.from)
+                            }
+                        }
+                        _ => (false, &relation.to),
+                    };
+
+                    if !matches {
+                        continue;
+                    }
+
+                    // Check target type if specified
+                    if let Some(ref target_type) = step.target_type {
+                        if let Some(entity) = graph.entities.iter().find(|e| e.name == *target_name)
+                        {
+                            if &entity.entity_type != target_type {
+                                continue;
+                            }
+                        } else {
+                            continue;
+                        }
+                    }
+
+                    let mut new_nodes = nodes_path.clone();
+                    new_nodes.push(target_name.clone());
+                    let mut new_rels = rels_path.clone();
+                    new_rels.push(step.relation_type.clone());
+
+                    next_paths.push((target_name.clone(), new_nodes, new_rels));
+                }
+            }
+
+            if next_paths.len() > max_results {
+                next_paths.truncate(max_results);
+            }
+
+            current_paths = next_paths;
+        }
+
+        // Build result
+        let mut paths = Vec::new();
+        let mut end_node_names: HashSet<String> = HashSet::new();
+
+        for (end_node, nodes, rels) in current_paths {
+            end_node_names.insert(end_node);
+            paths.push(TraversalPath {
+                nodes,
+                relations: rels,
+            });
+        }
+
+        let end_nodes: Vec<Entity> = graph
+            .entities
+            .iter()
+            .filter(|e| end_node_names.contains(&e.name))
+            .cloned()
+            .collect();
+
+        Ok(TraversalResult {
+            start_node: start.to_string(),
+            paths,
+            end_nodes,
+        })
+    }
+
+    /// Summarize entities
+    pub fn summarize(
+        &self,
+        entity_names: Option<Vec<String>>,
+        entity_type: Option<String>,
+        format: &str,
+    ) -> McpResult<Summary> {
+        let graph = self.load_graph()?;
+
+        let entities: Vec<&Entity> = graph
+            .entities
+            .iter()
+            .filter(|e| {
+                if let Some(ref names) = entity_names {
+                    names.contains(&e.name)
+                } else if let Some(ref et) = entity_type {
+                    &e.entity_type == et
+                } else {
+                    true
+                }
+            })
+            .collect();
+
+        match format {
+            "brief" => self.format_brief(&entities),
+            "detailed" => self.format_detailed(&entities),
+            "stats" => self.format_stats(&entities),
+            _ => self.format_brief(&entities),
+        }
+    }
+
+    fn format_brief(&self, entities: &[&Entity]) -> McpResult<Summary> {
+        let briefs: Vec<EntityBrief> = entities
+            .iter()
+            .map(|e| {
+                let brief = e
+                    .observations
+                    .first()
+                    .cloned()
+                    .unwrap_or_default()
+                    .chars()
+                    .take(100)
+                    .collect::<String>();
+                EntityBrief {
+                    name: e.name.clone(),
+                    entity_type: e.entity_type.clone(),
+                    brief,
+                }
+            })
+            .collect();
+
+        Ok(Summary {
+            total_entities: entities.len(),
+            entities: Some(briefs),
+            ..Default::default()
+        })
+    }
+
+    fn format_detailed(&self, entities: &[&Entity]) -> McpResult<Summary> {
+        let briefs: Vec<EntityBrief> = entities
+            .iter()
+            .map(|e| {
+                let brief = e.observations.join("; ");
+                EntityBrief {
+                    name: e.name.clone(),
+                    entity_type: e.entity_type.clone(),
+                    brief,
+                }
+            })
+            .collect();
+
+        Ok(Summary {
+            total_entities: entities.len(),
+            entities: Some(briefs),
+            ..Default::default()
+        })
+    }
+
+    fn format_stats(&self, entities: &[&Entity]) -> McpResult<Summary> {
+        let mut by_status: HashMap<String, usize> = HashMap::new();
+        let mut by_type: HashMap<String, usize> = HashMap::new();
+        let mut by_priority: HashMap<String, usize> = HashMap::new();
+
+        for entity in entities {
+            *by_type.entry(entity.entity_type.clone()).or_insert(0) += 1;
+
+            for obs in &entity.observations {
+                if obs.starts_with("Status:") {
+                    let status = obs.trim_start_matches("Status:").trim().to_string();
+                    *by_status.entry(status).or_insert(0) += 1;
+                }
+                if obs.starts_with("Priority:") {
+                    let priority = obs.trim_start_matches("Priority:").trim().to_string();
+                    *by_priority.entry(priority).or_insert(0) += 1;
+                }
+            }
+        }
+
+        Ok(Summary {
+            total_entities: entities.len(),
+            entities: None,
+            by_status: if by_status.is_empty() {
+                None
+            } else {
+                Some(by_status)
+            },
+            by_type: Some(by_type),
+            by_priority: if by_priority.is_empty() {
+                None
+            } else {
+                Some(by_priority)
+            },
         })
     }
 }
@@ -834,6 +1165,223 @@ impl Tool for OpenNodesTool {
 }
 
 // ----------------------------------------------------------------------------
+// Get Related Tool
+// ----------------------------------------------------------------------------
+
+pub struct GetRelatedTool {
+    kb: std::sync::Arc<KnowledgeBase>,
+}
+
+impl GetRelatedTool {
+    pub fn new(kb: std::sync::Arc<KnowledgeBase>) -> Self {
+        Self { kb }
+    }
+}
+
+impl Tool for GetRelatedTool {
+    fn definition(&self) -> McpTool {
+        McpTool {
+            name: "get_related".to_string(),
+            description: "Get entities related to a specific entity".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "entityName": {
+                        "type": "string",
+                        "description": "Name of the entity to find relations for"
+                    },
+                    "relationType": {
+                        "type": "string",
+                        "description": "Filter by relation type (optional)"
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["outgoing", "incoming", "both"],
+                        "default": "both",
+                        "description": "Direction of relations"
+                    }
+                },
+                "required": ["entityName"]
+            }),
+        }
+    }
+
+    fn execute(&self, params: Value) -> McpResult<Value> {
+        let entity_name = params
+            .get("entityName")
+            .and_then(|v| v.as_str())
+            .ok_or("Missing entityName")?;
+        let relation_type = params.get("relationType").and_then(|v| v.as_str());
+        let direction = params
+            .get("direction")
+            .and_then(|v| v.as_str())
+            .unwrap_or("both");
+
+        let related = self.kb.get_related(entity_name, relation_type, direction)?;
+        Ok(json!({
+            "content": [{
+                "type": "text",
+                "text": serde_json::to_string_pretty(&related)?
+            }]
+        }))
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Traverse Tool
+// ----------------------------------------------------------------------------
+
+pub struct TraverseTool {
+    kb: std::sync::Arc<KnowledgeBase>,
+}
+
+impl TraverseTool {
+    pub fn new(kb: std::sync::Arc<KnowledgeBase>) -> Self {
+        Self { kb }
+    }
+}
+
+impl Tool for TraverseTool {
+    fn definition(&self) -> McpTool {
+        McpTool {
+            name: "traverse".to_string(),
+            description: "Traverse the graph following a path pattern for multi-hop queries"
+                .to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "startNode": {
+                        "type": "string",
+                        "description": "Starting entity name"
+                    },
+                    "path": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "relationType": {
+                                    "type": "string",
+                                    "description": "Type of relation to follow"
+                                },
+                                "direction": {
+                                    "type": "string",
+                                    "enum": ["out", "in"],
+                                    "description": "Direction: out (outgoing) or in (incoming)"
+                                },
+                                "targetType": {
+                                    "type": "string",
+                                    "description": "Filter by target entity type (optional)"
+                                }
+                            },
+                            "required": ["relationType", "direction"]
+                        },
+                        "description": "Path pattern to follow"
+                    },
+                    "maxResults": {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Maximum number of results"
+                    }
+                },
+                "required": ["startNode", "path"]
+            }),
+        }
+    }
+
+    fn execute(&self, params: Value) -> McpResult<Value> {
+        let start_node = params
+            .get("startNode")
+            .and_then(|v| v.as_str())
+            .ok_or("Missing startNode")?;
+
+        let path: Vec<PathStep> = serde_json::from_value(
+            params.get("path").cloned().unwrap_or(json!([]))
+        )?;
+
+        let max_results = params
+            .get("maxResults")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(50) as usize;
+
+        let result = self.kb.traverse(start_node, path, max_results)?;
+        Ok(json!({
+            "content": [{
+                "type": "text",
+                "text": serde_json::to_string_pretty(&result)?
+            }]
+        }))
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Summarize Tool
+// ----------------------------------------------------------------------------
+
+pub struct SummarizeTool {
+    kb: std::sync::Arc<KnowledgeBase>,
+}
+
+impl SummarizeTool {
+    pub fn new(kb: std::sync::Arc<KnowledgeBase>) -> Self {
+        Self { kb }
+    }
+}
+
+impl Tool for SummarizeTool {
+    fn definition(&self) -> McpTool {
+        McpTool {
+            name: "summarize".to_string(),
+            description: "Get a condensed summary of entities".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "entityNames": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Specific entities to summarize (optional)"
+                    },
+                    "entityType": {
+                        "type": "string",
+                        "description": "Summarize all entities of this type (optional)"
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["brief", "detailed", "stats"],
+                        "default": "brief",
+                        "description": "Output format: brief (first observation), detailed (all observations), stats (statistics)"
+                    }
+                },
+                "required": []
+            }),
+        }
+    }
+
+    fn execute(&self, params: Value) -> McpResult<Value> {
+        let entity_names: Option<Vec<String>> = params
+            .get("entityNames")
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+
+        let entity_type = params
+            .get("entityType")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let format = params
+            .get("format")
+            .and_then(|v| v.as_str())
+            .unwrap_or("brief");
+
+        let summary = self.kb.summarize(entity_names, entity_type, format)?;
+        Ok(json!({
+            "content": [{
+                "type": "text",
+                "text": serde_json::to_string_pretty(&summary)?
+            }]
+        }))
+    }
+}
+
+// ----------------------------------------------------------------------------
 // Time Tool
 // ----------------------------------------------------------------------------
 
@@ -1165,7 +1713,7 @@ fn main() -> McpResult<()> {
 
     let mut server = McpServer::with_info(server_info);
 
-    // Register all 9 memory tools + 1 time tool
+    // Register all 9 memory tools + 3 query tools + 1 time tool
     server.register_tool(Box::new(CreateEntitiesTool::new(kb.clone())));
     server.register_tool(Box::new(CreateRelationsTool::new(kb.clone())));
     server.register_tool(Box::new(AddObservationsTool::new(kb.clone())));
@@ -1175,6 +1723,11 @@ fn main() -> McpResult<()> {
     server.register_tool(Box::new(ReadGraphTool::new(kb.clone())));
     server.register_tool(Box::new(SearchNodesTool::new(kb.clone())));
     server.register_tool(Box::new(OpenNodesTool::new(kb.clone())));
+    // New query tools
+    server.register_tool(Box::new(GetRelatedTool::new(kb.clone())));
+    server.register_tool(Box::new(TraverseTool::new(kb.clone())));
+    server.register_tool(Box::new(SummarizeTool::new(kb.clone())));
+    // Time tool
     server.register_tool(Box::new(GetCurrentTimeTool::new()));
 
     server.run()

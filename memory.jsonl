@@ -1,6 +1,6 @@
 {"name":"Alice","entityType":"Person","observations":["Software Engineer","Lives in NYC","Loves coding","Age 28"]}
 {"name":"Bob","entityType":"Person","observations":["Doctor","Works at hospital","Age 32"]}
-{"name":"Memory Graph MCP Server","entityType":"Project","observations":["Dự án giúp AI Agent quản lý dự án phần mềm tốt hơn","Chống ảo giác (fact anchoring) bằng knowledge graph","Đảm bảo độ chính xác qua thời gian","Sử dụng Rust làm ngôn ngữ chính","Lưu trữ dữ liệu bằng JSONL format","Tuân thủ giao thức MCP (Model Context Protocol)","Có 9 memory tools: create_entities, create_relations, add_observations, delete_entities, delete_observations, delete_relations, read_graph, search_nodes, open_nodes"]}
+{"name":"Memory Graph MCP Server","entityType":"Project","observations":["Dự án giúp AI Agent quản lý dự án phần mềm tốt hơn","Chống ảo giác (fact anchoring) bằng knowledge graph","Đảm bảo độ chính xác qua thời gian","Sử dụng Rust làm ngôn ngữ chính","Lưu trữ dữ liệu bằng JSONL format","Tuân thủ giao thức MCP (Model Context Protocol)","Có 9 memory tools: create_entities, create_relations, add_observations, delete_entities, delete_observations, delete_relations, read_graph, search_nodes, open_nodes","Total tools: 13 (9 memory + 3 query + 1 time)","New tools added: get_related, traverse, summarize"]}
 {"name":"tiach","entityType":"Developer","observations":["Là developer chính của dự án Memory Graph","Mục tiêu: xây dựng hệ thống giúp AI không quên thông tin quan trọng"]}
 {"name":"Feature: Create Entities","entityType":"Feature","observations":["Mô tả: Tạo mới entities trong knowledge graph","Status: Completed","Priority: High","File: memory.rs - function create_entities"]}
 {"name":"Feature: Create Relations","entityType":"Feature","observations":["Mô tả: Tạo quan hệ giữa các entities","Status: Completed","Priority: High","File: memory.rs - function create_relations"]}
@@ -14,6 +14,18 @@
 {"name":"Requirement: MCP Compliance","entityType":"Requirement","observations":["Mô tả: Tuân thủ Model Context Protocol specification","Type: Functional","Priority: Critical","Status: Implemented"]}
 {"name":"Risk: JSONL Scalability","entityType":"Risk","observations":["Mô tả: Performance degradation với >100K entities","Impact: Medium","Probability: Low (most use cases < 10K entities)","Mitigation: Implement indexing hoặc optional SQLite backend","Status: Accepted"]}
 {"name":"Risk: Memory Usage","entityType":"Risk","observations":["Mô tả: RAM usage cao khi load toàn bộ graph vào memory","Impact: Medium","Probability: Low","Mitigation: Implement lazy loading hoặc streaming","Status: Monitoring"]}
+{"name":"Feature: GNN Integration","entityType":"Feature","observations":["Mô tả: Tích hợp Graph Neural Network để nâng cao khả năng AI Agent","Status: Planned","Priority: Medium","Target Milestone: Post-Production","Capability 1: Semantic Search - tìm nodes tương tự về ý nghĩa sử dụng node embeddings","Capability 2: Link Prediction - đề xuất relations mới dựa trên graph structure","Capability 3: Node Embeddings - encode context từ neighboring nodes","Capability 4: Multi-hop Reasoning - suy luận qua nhiều relations","Tech Options: PyTorch Geometric, DGL, hoặc custom Rust implementation","Dependencies: Requires embedding infrastructure first"]}
+{"name":"Feature: Semantic Search","entityType":"Feature","observations":["Mô tả: Tìm kiếm entities bằng semantic similarity thay vì text matching","Status: Planned","Priority: High","Target Milestone: Production Ready","Approach: Embed entity text (name + type + observations) thành vectors","Storage: Separate vector file (memory.vec) hoặc extend JSONL","Tech Options: Ollama API (short-term), ONNX Runtime (long-term)","Prerequisite for: Feature: GNN Integration"]}
+{"name":"EntityType: Module","entityType":"EntityType","observations":["Mô tả: Đại diện cho một module/package trong dự án","Required fields: name, path","Observations nên có: Purpose, Dependencies, Public API, Key files","Example: Module: Payment - backend/src/payment/","Relations: belongs_to Project, contains File, depends_on Module"]}
+{"name":"EntityType: File","entityType":"EntityType","observations":["Mô tả: File quan trọng trong dự án","Required fields: name (với path), language","Observations nên có: Purpose, Key functions, Exports, Line count","Example: File: order_service.rs - backend/src/order/","Relations: belongs_to Module, contains Function, imports File"]}
+{"name":"EntityType: Function","entityType":"EntityType","observations":["Mô tả: Function/method phức tạp cần nhớ","Required fields: name, signature","Observations nên có: Purpose, Parameters, Return type, Side effects, Complexity notes","Example: Function: create_order(user_id, items) -> Result<Order>","Relations: defined_in File, calls Function, uses Schema"]}
+{"name":"EntityType: Schema","entityType":"EntityType","observations":["Mô tả: Database table, API schema, data structure","Required fields: name, type (table/api/struct)","Observations nên có: Fields, Types, Indexes, Constraints, Relationships","Example: Schema: orders - PostgreSQL table","Relations: used_by Function, relates_to Schema"]}
+{"name":"EntityType: BusinessRule","entityType":"EntityType","observations":["Mô tả: Business logic và quy tắc nghiệp vụ","Required fields: name, domain","Observations nên có: Rule description, Conditions, Edge cases, Exceptions","Example: BusinessRule: Free Shipping >= 500k VND","Relations: implemented_by Function, affects Feature"]}
+{"name":"EntityType: Convention","entityType":"EntityType","observations":["Mô tả: Coding conventions và patterns của dự án","Required fields: name, scope (project/module/language)","Observations nên có: Rule, Examples, Exceptions, Reasoning","Example: Convention: Error Handling - dùng Result<T, AppError>","Relations: applies_to Project/Module, enforced_by Linter"]}
+{"name":"EntityType: Dependency","entityType":"EntityType","observations":["Mô tả: External dependencies (crates, npm packages, etc)","Required fields: name, version, package manager","Observations nên có: Purpose, Key APIs used, Alternatives, Security notes","Example: Dependency: tokio 1.35 - async runtime","Relations: used_by Module, replaces Dependency"]}
+{"name":"Feature: Get Related Tool","entityType":"Feature","observations":["Mô tả: Tool mới lấy các entities có relation với entity cho trước","Status: Proposed","Priority: High","Input: entity_name, relation_type (optional), direction (in/out/both)","Output: List of related entities với relation info","Use case: Tìm tất cả files trong module, tìm dependencies của function","Status: Completed","Implemented: 2026-01-11","File: memory.rs - GetRelatedTool struct","Structs added: RelatedEntity, RelatedEntities"]}
+{"name":"Feature: Traverse Tool","entityType":"Feature","observations":["Mô tả: Tool mới cho multi-hop graph traversal","Status: Proposed","Priority: Medium","Input: start_node, path_pattern (e.g., 'depends_on->uses->*')","Output: All nodes matching the path pattern","Use case: Tìm transitive dependencies, impact analysis","Status: Completed","Implemented: 2026-01-11","File: memory.rs - TraverseTool struct","Structs added: PathStep, TraversalPath, TraversalResult"]}
+{"name":"Feature: Summarize Tool","entityType":"Feature","observations":["Mô tả: Tool mới tóm tắt subset của graph","Status: Proposed","Priority: Low","Input: entity_names hoặc filter criteria","Output: Condensed summary của selected entities","Use case: Quick overview của module, project status","Status: Completed","Implemented: 2026-01-11","File: memory.rs - SummarizeTool struct","Structs added: Summary, EntityBrief","Formats: brief, detailed, stats"]}
 {"from":"tiach","to":"Memory Graph MCP Server","relationType":"develops"}
 {"from":"Memory Graph MCP Server","to":"Feature: Create Entities","relationType":"implements"}
 {"from":"Memory Graph MCP Server","to":"Feature: Create Relations","relationType":"implements"}
@@ -36,3 +48,24 @@
 {"from":"Risk: JSONL Scalability","to":"Milestone: Production Ready","relationType":"threatens"}
 {"from":"Risk: Memory Usage","to":"Milestone: Production Ready","relationType":"threatens"}
 {"from":"Risk: JSONL Scalability","to":"Decision: Use JSONL Format","relationType":"related_to"}
+{"from":"Memory Graph MCP Server","to":"Feature: GNN Integration","relationType":"will_implement"}
+{"from":"Memory Graph MCP Server","to":"Feature: Semantic Search","relationType":"will_implement"}
+{"from":"Feature: GNN Integration","to":"Feature: Semantic Search","relationType":"depends_on"}
+{"from":"Feature: GNN Integration","to":"Milestone: Production Ready","relationType":"planned_for"}
+{"from":"Feature: Semantic Search","to":"Milestone: Production Ready","relationType":"planned_for"}
+{"from":"tiach","to":"Feature: GNN Integration","relationType":"owns"}
+{"from":"tiach","to":"Feature: Semantic Search","relationType":"owns"}
+{"from":"Memory Graph MCP Server","to":"EntityType: Module","relationType":"supports"}
+{"from":"Memory Graph MCP Server","to":"EntityType: File","relationType":"supports"}
+{"from":"Memory Graph MCP Server","to":"EntityType: Function","relationType":"supports"}
+{"from":"Memory Graph MCP Server","to":"EntityType: Schema","relationType":"supports"}
+{"from":"Memory Graph MCP Server","to":"EntityType: BusinessRule","relationType":"supports"}
+{"from":"Memory Graph MCP Server","to":"EntityType: Convention","relationType":"supports"}
+{"from":"Memory Graph MCP Server","to":"EntityType: Dependency","relationType":"supports"}
+{"from":"Memory Graph MCP Server","to":"Feature: Get Related Tool","relationType":"will_implement"}
+{"from":"Memory Graph MCP Server","to":"Feature: Traverse Tool","relationType":"will_implement"}
+{"from":"Memory Graph MCP Server","to":"Feature: Summarize Tool","relationType":"will_implement"}
+{"from":"Feature: Traverse Tool","to":"Feature: Get Related Tool","relationType":"depends_on"}
+{"from":"tiach","to":"Feature: Get Related Tool","relationType":"owns"}
+{"from":"tiach","to":"Feature: Traverse Tool","relationType":"owns"}
+{"from":"tiach","to":"Feature: Summarize Tool","relationType":"owns"}
