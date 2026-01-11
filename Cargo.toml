@@ -1,6 +1,6 @@
 [package]
 name = "memory-graph"
-version = "1.1.0"
+version = "1.2.0"
 edition = "2021"
 authors = ["Memory Graph MCP Server"]
 description = "A knowledge graph MCP server implementing the Model Context Protocol"

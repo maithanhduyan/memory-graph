@@ -5,18 +5,19 @@
 //!
 //! # Features
 //!
-//! - **15 MCP Tools**: Full CRUD, query, and temporal operations
-//! - **Thread-Safe**: Production-ready with Mutex-based concurrency
+//! - **16 MCP Tools**: Full CRUD, query, temporal, and inference operations
+//! - **Thread-Safe**: Production-ready with RwLock-based concurrency
 //! - **Semantic Search**: Built-in synonym matching
 //! - **Time Travel**: Query historical state with validFrom/validTo
 //! - **Pagination**: Handle massive graphs with limit/offset
+//! - **Inference Engine**: Discover hidden relations via logical rules
 //!
 //! # Modules
 //!
 //! - `types`: Core data structures (Entity, Relation, KnowledgeGraph)
 //! - `protocol`: MCP and JSON-RPC protocol types
-//! - `knowledge_base`: Core data engine with CRUD and queries
-//! - `tools`: 15 MCP tool implementations
+//! - `knowledge_base`: Core data engine with CRUD, queries, and inference
+//! - `tools`: 16 MCP tool implementations
 //! - `search`: Semantic search with synonym expansion
 //! - `validation`: Entity and relation type validation
 //! - `utils`: Utility functions (timestamps, etc.)
@@ -48,12 +49,14 @@ pub mod utils;
 pub mod validation;
 
 // Re-export commonly used items at crate root
+pub use knowledge_base::inference::{InferenceEngine, InferenceRule};
 pub use knowledge_base::KnowledgeBase;
 pub use protocol::{McpTool, ServerInfo, Tool};
 pub use server::McpServer;
 pub use types::{
-    Entity, EntityBrief, KnowledgeGraph, McpResult, Observation, ObservationDeletion, PathStep,
-    RelatedEntities, RelatedEntity, Relation, Summary, TraversalPath, TraversalResult,
+    Entity, EntityBrief, InferResult, InferStats, InferredRelation, KnowledgeGraph, McpResult,
+    Observation, ObservationDeletion, PathStep, RelatedEntities, RelatedEntity, Relation, Summary,
+    TraversalPath, TraversalResult,
 };
 
 /// Library version
