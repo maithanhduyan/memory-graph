@@ -4,7 +4,9 @@ let editor = null;
 let graph = null;
 let renderer = null;
 let showObservations = false;
+let showEdgeLabels = true;
 let inferredEdges = [];
+let selectedNode = null;
 
 // Initialize application
 async function init() {
@@ -47,12 +49,14 @@ function rebuildGraph() {
   }
 
   renderer = new Sigma(graph, document.getElementById("container"), {
-    renderEdgeLabels: false,
+    renderEdgeLabels: showEdgeLabels,
     labelDensity: 0.12,
     labelGridCellSize: 150,
     labelRenderedSizeThreshold: 10,
     defaultEdgeColor: '#475569',
     labelColor: { color: '#e5e7eb' },
+    edgeLabelColor: { color: '#f59e0b' },
+    edgeLabelSize: 10,
     minCameraRatio: 0.05,
     maxCameraRatio: 10
   });
@@ -68,17 +72,27 @@ function setupGraphEvents() {
   const tooltipObs = document.getElementById('tooltip-observations');
 
   renderer.on("enterNode", ({ node }) => {
+    // Don't show tooltip if detail panel is open for this node
+    if (selectedNode === node) return;
+
     const attrs = graph.getNodeAttributes(node);
     tooltipTitle.textContent = attrs.fullName || attrs.label;
     tooltipType.innerHTML = `<span class="type-badge">${attrs.nodeType}</span> ${attrs.entityType || ''}`;
     tooltipObs.innerHTML = '';
 
     if (attrs.observations && attrs.observations.length > 0) {
-      attrs.observations.forEach(obs => {
+      attrs.observations.slice(0, 3).forEach(obs => {
         const li = document.createElement('li');
-        li.textContent = obs;
+        li.textContent = obs.length > 80 ? obs.substring(0, 80) + '...' : obs;
         tooltipObs.appendChild(li);
       });
+      if (attrs.observations.length > 3) {
+        const li = document.createElement('li');
+        li.style.color = '#64748b';
+        li.style.fontStyle = 'italic';
+        li.textContent = `+ ${attrs.observations.length - 3} more... (click to view all)`;
+        tooltipObs.appendChild(li);
+      }
     } else if (attrs.fullText) {
       const li = document.createElement('li');
       li.textContent = attrs.fullText;
@@ -95,6 +109,9 @@ function setupGraphEvents() {
   renderer.on("clickNode", ({ node }) => {
     const attrs = graph.getNodeAttributes(node);
     if (attrs.nodeType === 'entity') {
+      selectedNode = node;
+
+      // Update entity select for inference
       document.getElementById('entity-select').value = attrs.fullName || attrs.label;
       document.getElementById('run-inference').disabled = false;
 
@@ -103,8 +120,194 @@ function setupGraphEvents() {
       listItems.forEach(item => {
         item.classList.toggle('selected', item.dataset.name === (attrs.fullName || attrs.label));
       });
+
+      // Show node detail panel
+      showNodeDetail(attrs.fullName || attrs.label, attrs);
+
+      // Highlight connected edges
+      highlightConnections(node);
     }
   });
+
+  // Click on stage (background) to deselect
+  renderer.on("clickStage", () => {
+    closeNodeDetail();
+    resetHighlights();
+  });
+}
+
+// Show node detail panel
+function showNodeDetail(entityName, attrs) {
+  const panel = document.getElementById('node-detail-panel');
+  const detailDot = document.getElementById('detail-dot');
+  const detailTitle = document.getElementById('detail-title');
+  const detailType = document.getElementById('detail-type');
+  const detailObs = document.getElementById('detail-observations');
+  const detailConns = document.getElementById('detail-connections');
+
+  // Hide tooltip
+  document.getElementById('tooltip').style.display = 'none';
+
+  // Set header info
+  detailDot.style.background = GraphModule.colorByType(attrs.entityType);
+  detailTitle.textContent = entityName;
+  detailType.textContent = attrs.entityType;
+
+  // Set observations
+  detailObs.innerHTML = '';
+  if (attrs.observations && attrs.observations.length > 0) {
+    attrs.observations.forEach(obs => {
+      const li = document.createElement('li');
+      li.textContent = obs;
+      detailObs.appendChild(li);
+    });
+  } else {
+    detailObs.innerHTML = '<li style="color: #64748b; font-style: italic;">No observations</li>';
+  }
+
+  // Set connections
+  const connections = editor.getRelationsForEntity(entityName);
+  detailConns.innerHTML = '';
+
+  if (connections.outgoing.length === 0 && connections.incoming.length === 0) {
+    detailConns.innerHTML = '<div style="color: #64748b; font-style: italic; padding: 8px;">No connections</div>';
+  } else {
+    // Outgoing connections
+    if (connections.outgoing.length > 0) {
+      const outGroup = document.createElement('div');
+      outGroup.className = 'connection-group';
+      outGroup.innerHTML = `
+        <div class="connection-group-title">
+          <span>→ Outgoing</span>
+          <span class="count">${connections.outgoing.length}</span>
+        </div>
+      `;
+      connections.outgoing.forEach(rel => {
+        const item = document.createElement('div');
+        item.className = 'connection-item';
+        item.onclick = () => focusOnNode(rel.to);
+        item.innerHTML = `
+          <span class="direction outgoing">→</span>
+          <div class="conn-info">
+            <div class="conn-name" title="${rel.to}">${rel.to}</div>
+            <div class="conn-type">${rel.relationType}</div>
+          </div>
+        `;
+        outGroup.appendChild(item);
+      });
+      detailConns.appendChild(outGroup);
+    }
+
+    // Incoming connections
+    if (connections.incoming.length > 0) {
+      const inGroup = document.createElement('div');
+      inGroup.className = 'connection-group';
+      inGroup.innerHTML = `
+        <div class="connection-group-title">
+          <span>← Incoming</span>
+          <span class="count">${connections.incoming.length}</span>
+        </div>
+      `;
+      connections.incoming.forEach(rel => {
+        const item = document.createElement('div');
+        item.className = 'connection-item';
+        item.onclick = () => focusOnNode(rel.from);
+        item.innerHTML = `
+          <span class="direction incoming">←</span>
+          <div class="conn-info">
+            <div class="conn-name" title="${rel.from}">${rel.from}</div>
+            <div class="conn-type">${rel.relationType}</div>
+          </div>
+        `;
+        inGroup.appendChild(item);
+      });
+      detailConns.appendChild(inGroup);
+    }
+  }
+
+  panel.classList.add('active');
+}
+
+// Close node detail panel
+function closeNodeDetail() {
+  document.getElementById('node-detail-panel').classList.remove('active');
+  selectedNode = null;
+  resetHighlights();
+}
+
+// Focus camera on a node
+function focusOnNode(entityName) {
+  const nodeId = `entity:${entityName}`;
+  if (graph.hasNode(nodeId)) {
+    const attrs = graph.getNodeAttributes(nodeId);
+
+    // Animate camera to node
+    renderer.getCamera().animate({
+      x: attrs.x,
+      y: attrs.y,
+      ratio: 0.3
+    }, { duration: 500 });
+
+    // Select the node after animation
+    setTimeout(() => {
+      selectedNode = nodeId;
+      showNodeDetail(entityName, attrs);
+      highlightConnections(nodeId);
+    }, 300);
+  }
+}
+
+// Highlight connections for selected node
+function highlightConnections(nodeId) {
+  // Reset all node/edge colors first
+  graph.forEachNode((node, attrs) => {
+    if (node.startsWith('entity:') || node.startsWith('type:')) {
+      graph.setNodeAttribute(node, 'highlighted', false);
+    }
+  });
+
+  graph.forEachEdge((edge, attrs) => {
+    graph.setEdgeAttribute(edge, 'highlighted', false);
+  });
+
+  // Highlight selected node
+  graph.setNodeAttribute(nodeId, 'highlighted', true);
+
+  // Highlight connected edges and nodes
+  graph.forEachEdge(nodeId, (edge, attrs, source, target) => {
+    graph.setEdgeAttribute(edge, 'highlighted', true);
+    if (source !== nodeId) graph.setNodeAttribute(source, 'highlighted', true);
+    if (target !== nodeId) graph.setNodeAttribute(target, 'highlighted', true);
+  });
+
+  // Apply visual changes via reducers
+  renderer.setSetting('nodeReducer', (node, data) => {
+    const highlighted = graph.getNodeAttribute(node, 'highlighted');
+    if (selectedNode && !highlighted && node !== selectedNode) {
+      return { ...data, color: '#334155', label: null };
+    }
+    return data;
+  });
+
+  renderer.setSetting('edgeReducer', (edge, data) => {
+    const highlighted = graph.getEdgeAttribute(edge, 'highlighted');
+    if (selectedNode && !highlighted) {
+      return { ...data, color: '#1e293b', size: 0.5 };
+    }
+    if (highlighted) {
+      return { ...data, color: '#22c55e', size: 3 };
+    }
+    return data;
+  });
+
+  renderer.refresh();
+}
+
+// Reset node/edge highlights
+function resetHighlights() {
+  renderer.setSetting('nodeReducer', null);
+  renderer.setSetting('edgeReducer', null);
+  renderer.refresh();
 }
 
 // Update statistics display
@@ -492,6 +695,14 @@ function setupEventListeners() {
     rebuildGraph();
   };
 
+  // Toggle edge labels
+  document.getElementById('btn-toggle-labels').onclick = function() {
+    showEdgeLabels = !showEdgeLabels;
+    this.classList.toggle('active', showEdgeLabels);
+    renderer.setSetting('renderEdgeLabels', showEdgeLabels);
+    renderer.refresh();
+  };
+
   // Inference controls
   document.getElementById('entity-select').onchange = () => {
     document.getElementById('run-inference').disabled = !document.getElementById('entity-select').value;
@@ -538,3 +749,5 @@ window.deleteEntity = deleteEntity;
 window.showAddRelationModal = showAddRelationModal;
 window.saveRelation = saveRelation;
 window.deleteRelation = deleteRelation;
+window.closeNodeDetail = closeNodeDetail;
+window.focusOnNode = focusOnNode;

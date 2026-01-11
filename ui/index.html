@@ -163,6 +163,7 @@
       <button class="toolbar-btn" id="btn-zoom-out">🔍-</button>
       <button class="toolbar-btn" id="btn-reset">↺</button>
       <button class="toolbar-btn" id="btn-toggle-obs">👁 Show Obs</button>
+      <button class="toolbar-btn active" id="btn-toggle-labels">🏷️ Labels</button>
       <button class="toolbar-btn" id="btn-export">💾 Export</button>
     </div>
 
@@ -173,11 +174,33 @@
     <div id="container"></div>
   </div>
 
-  <!-- Tooltip -->
+  <!-- Tooltip (on hover) -->
   <div id="tooltip">
     <h3 id="tooltip-title"></h3>
     <div id="tooltip-type" class="type"></div>
     <ul id="tooltip-observations"></ul>
+  </div>
+
+  <!-- Node Detail Panel (on click - persistent) -->
+  <div id="node-detail-panel">
+    <div class="panel-close" onclick="closeNodeDetail()">✕</div>
+    <div class="node-header">
+      <span class="node-dot" id="detail-dot"></span>
+      <div class="node-info">
+        <h3 id="detail-title"></h3>
+        <span class="node-type" id="detail-type"></span>
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <h4>📝 Observations</h4>
+      <ul id="detail-observations"></ul>
+    </div>
+
+    <div class="detail-section">
+      <h4>🔗 Connections</h4>
+      <div id="detail-connections"></div>
+    </div>
   </div>
 
   <!-- Entity Modal -->
