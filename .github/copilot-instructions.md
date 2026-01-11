@@ -242,4 +242,107 @@ Memory updated ✓
 5. **Import/Export**: Sync với external knowledge bases
 6. **Multi-tenant**: Support nhiều projects trong 1 server
 
+## Context Preservation (CRITICAL)
+
+### Khi nào cần lưu vào Memory:
+
+| Trigger | Action | Tool |
+|---------|--------|------|
+| `Summarized conversation history` | Lưu summary vào entity | `create_entities` hoặc `add_observations` |
+| Mất bối cảnh (context lost) | Lưu tiến độ hiện tại | `add_observations` |
+| Hoàn thành task lớn | Tạo entity mới với chi tiết | `create_entities` |
+| Phát hiện bug/lesson | Ghi nhận để không lặp lại | `create_entities` |
+| Trước khi kết thúc session | Lưu pending work | `add_observations` |
+
+### Khi `Summarized conversation history`:
+
+AI Agent **BẮT BUỘC** phải:
+
+1. **Tạo entity mới** nếu đang làm task lớn chưa có trong graph:
+```json
+{
+  "entityType": "Feature|Bug|Decision|Task",
+  "name": "Feature: [Tên feature đang làm]",
+  "observations": [
+    "Status: [In Progress|Completed|Blocked]",
+    "Phase: [Phase hiện tại]",
+    "Files modified: [danh sách files]",
+    "Tests: [số tests passed/failed]",
+    "Next steps: [việc cần làm tiếp]"
+  ]
+}
+```
+
+2. **Hoặc add observations** vào entity đã tồn tại:
+```json
+{
+  "entityName": "Feature: [Tên feature]",
+  "contents": [
+    "[Timestamp] Session summary: ...",
+    "Completed: [danh sách đã hoàn thành]",
+    "Pending: [việc còn lại]",
+    "Blockers: [nếu có]"
+  ]
+}
+```
+
+### Khi mất bối cảnh (Context Lost):
+
+Dấu hiệu nhận biết:
+- User nói "bạn đã quên", "tiếp tục việc đang làm"
+- AI không nhớ đang làm gì
+- Conversation bị reset/refresh
+
+**Recovery Flow:**
+```
+1. search_nodes("Feature|Bug|Task") → tìm recent work
+2. open_nodes([entity_name]) → lấy chi tiết
+3. get_related(entity_name) → xem dependencies
+4. Tiếp tục từ "Next steps" trong observations
+```
+
+### Template cho Session Summary:
+
+```json
+// Tạo entity mới cho task lớn
+{
+  "name": "Session: [YYYY-MM-DD] [Topic]",
+  "entityType": "ConversationSummary",
+  "observations": [
+    "Duration: [thời gian làm việc]",
+    "Goal: [mục tiêu ban đầu]",
+    "Achieved: [đã đạt được gì]",
+    "Files: [files đã tạo/sửa]",
+    "Tests: [kết quả test]",
+    "Decisions: [quyết định đã đưa ra]",
+    "Learnings: [bài học rút ra]",
+    "Next: [việc cần làm tiếp]"
+  ]
+}
+```
+
+### Best Practices cho Context Preservation:
+
+1. **Lưu thường xuyên**: Sau mỗi milestone nhỏ, add observation
+2. **Chi tiết hóa**: Ghi rõ file paths, function names, line numbers
+3. **Link entities**: Tạo relations giữa tasks liên quan
+4. **Timestamp**: Luôn ghi thời gian để track progress
+5. **Next steps rõ ràng**: Để AI tiếp theo biết làm gì
+
+### Ví dụ thực tế:
+
+```
+// User: "Tiếp tục việc đang làm"
+// AI đã mất context
+
+AI Agent:
+1. search_nodes("Feature|Task|Session", limit: 10)
+   → Tìm thấy "Feature: Event Sourcing Architecture"
+
+2. open_nodes(["Feature: Event Sourcing Architecture"])
+   → Observations có "Next steps: Phase 8 - Enhancements"
+
+3. AI biết cần làm Phase 8, tiếp tục không cần hỏi lại user
+```
+
 **Important Note**: Always prioritize the integrity and efficiency of the knowledge graph when making suggestions or changes.

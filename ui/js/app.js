@@ -42,6 +42,11 @@ async function init() {
     document.getElementById('graph-subtitle').textContent =
       `${editor.entities.length} entities, ${editor.relations.length} relations`;
 
+    // Initialize WebSocket for real-time updates
+    if (typeof initWebSocket === 'function') {
+      initWebSocket();
+    }
+
     console.log('Memory Graph initialized');
   } catch (error) {
     console.error('Failed to initialize:', error);
@@ -836,8 +841,186 @@ function showToast(message, type = 'info') {
   }, 3000);
 }
 
+// ===================================
+// Event Sourcing Stats
+// ===================================
+
+// Event Sourcing stats configuration
+const ES_STATS_CONFIG = {
+  // MCP server endpoint (update if needed)
+  endpoint: null, // Will use mock data if null
+  refreshInterval: 30000 // 30 seconds
+};
+
+// Fetch Event Sourcing stats from MCP server
+async function fetchEventSourcingStats() {
+  // For now, we'll parse stats from the JSONL file structure
+  // In production, this would call the MCP server's get_stats tool
+  try {
+    const response = await fetch('../memory.jsonl');
+    if (!response.ok) throw new Error('Failed to fetch data');
+
+    const text = await response.text();
+    const lines = text.trim().split('\n').filter(l => l.trim());
+
+    // Count events by type
+    const eventsByType = {
+      'EntityCreated': 0,
+      'RelationCreated': 0,
+      'ObservationAdded': 0,
+      'EntityDeleted': 0,
+      'RelationDeleted': 0,
+      'ObservationDeleted': 0
+    };
+
+    let totalEvents = 0;
+    let lastEventId = 0;
+
+    lines.forEach(line => {
+      try {
+        const data = JSON.parse(line);
+        if (data.event_type) {
+          // Event format
+          totalEvents++;
+          const eventType = data.event_type;
+          if (eventsByType[eventType] !== undefined) {
+            eventsByType[eventType]++;
+          }
+          if (data.event_id && data.event_id > lastEventId) {
+            lastEventId = data.event_id;
+          }
+        } else if (data.type === 'entity' || data.type === 'relation') {
+          // Legacy format - count as entities/relations
+          if (data.type === 'entity') {
+            eventsByType['EntityCreated']++;
+          } else {
+            eventsByType['RelationCreated']++;
+          }
+          totalEvents++;
+        }
+      } catch (e) {
+        // Skip invalid lines
+      }
+    });
+
+    // Get file size
+    const fileSize = new Blob([text]).size;
+
+    return {
+      active_event_count: totalEvents,
+      archived_event_count: 0,
+      active_log_size: fileSize,
+      archive_size: 0,
+      snapshot_size: 0,
+      archive_file_count: 0,
+      events_by_type: eventsByType,
+      last_event_id: lastEventId,
+      last_snapshot_event_id: 0,
+      events_since_snapshot: totalEvents,
+      enabled: true
+    };
+  } catch (error) {
+    console.error('Failed to fetch ES stats:', error);
+    return null;
+  }
+}
+
+// Format bytes to human readable
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+// Update Event Sourcing stats UI
+async function updateEventSourcingStats() {
+  const stats = await fetchEventSourcingStats();
+
+  const statusEl = document.getElementById('es-status');
+  const statusTextEl = statusEl.querySelector('.es-status-text');
+
+  if (!stats) {
+    // Error state
+    statusEl.className = 'es-status error';
+    statusTextEl.textContent = 'Failed to fetch stats';
+    document.getElementById('es-total-events').textContent = '-';
+    document.getElementById('es-last-snapshot').textContent = '-';
+    document.getElementById('es-archive-count').textContent = '-';
+    document.getElementById('es-total-size').textContent = '-';
+    return;
+  }
+
+  // Update stats values
+  const totalEvents = stats.active_event_count + stats.archived_event_count;
+  document.getElementById('es-total-events').textContent = totalEvents.toLocaleString();
+
+  if (stats.last_snapshot_event_id > 0) {
+    document.getElementById('es-last-snapshot').textContent = `#${stats.last_snapshot_event_id}`;
+  } else {
+    document.getElementById('es-last-snapshot').textContent = 'None';
+  }
+
+  document.getElementById('es-archive-count').textContent = stats.archive_file_count.toString();
+
+  const totalSize = stats.active_log_size + stats.archive_size + stats.snapshot_size;
+  document.getElementById('es-total-size').textContent = formatBytes(totalSize);
+
+  // Update events breakdown
+  const breakdownItemsEl = document.getElementById('es-breakdown-items');
+  const eventTypes = Object.entries(stats.events_by_type || {}).filter(([_, count]) => count > 0);
+
+  if (eventTypes.length > 0) {
+    breakdownItemsEl.innerHTML = eventTypes.map(([type, count]) => {
+      // Shorten event type names
+      const shortType = type.replace('Created', '+').replace('Deleted', '-').replace('Added', '+');
+      return `<span class="es-breakdown-item"><span class="type">${shortType}</span><span class="count">${count}</span></span>`;
+    }).join('');
+  } else {
+    breakdownItemsEl.innerHTML = '<span class="es-breakdown-empty">No events recorded</span>';
+  }
+
+  // Update status
+  if (stats.enabled) {
+    statusEl.className = 'es-status active';
+    statusTextEl.textContent = `Event Sourcing active • ${stats.events_since_snapshot} events since snapshot`;
+  } else {
+    statusEl.className = 'es-status inactive';
+    statusTextEl.textContent = 'Event Sourcing disabled';
+  }
+}
+
+// Setup Event Sourcing stats refresh
+function setupEventSourcingStats() {
+  // Initial load
+  updateEventSourcingStats();
+
+  // Refresh button
+  const refreshBtn = document.getElementById('btn-refresh-es-stats');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = '⏳ Loading...';
+      updateEventSourcingStats().finally(() => {
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = '🔄 Refresh Stats';
+        showToast('Stats refreshed', 'success');
+      });
+    });
+  }
+
+  // Auto-refresh (optional)
+  if (ES_STATS_CONFIG.refreshInterval > 0) {
+    setInterval(updateEventSourcingStats, ES_STATS_CONFIG.refreshInterval);
+  }
+}
+
 // Start app
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+  init();
+  setupEventSourcingStats();
+});
 
 // Export for onclick handlers
 window.showAddEntityModal = showAddEntityModal;

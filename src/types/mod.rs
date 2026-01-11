@@ -3,6 +3,7 @@
 //! This module contains all the core data structures used throughout the application.
 
 mod entity;
+mod event;
 mod graph;
 mod inference;
 mod observation;
@@ -11,6 +12,11 @@ mod summary;
 mod traversal;
 
 pub use entity::{Entity, EntityBrief};
+pub use event::{
+    EntityCreatedData, EntityDeletedData, EntityUpdatedData, Event, EventData, EventSource,
+    EventType, ObservationAddedData, ObservationRemovedData, RelationCreatedData,
+    RelationDeletedData, SnapshotMeta,
+};
 pub use graph::KnowledgeGraph;
 pub use inference::{InferResult, InferStats, InferredRelation};
 pub use observation::{Observation, ObservationDeletion};

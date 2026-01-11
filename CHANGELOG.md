@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-01-11
+
+### 🔌 WebSocket Real-time UI Release
+
+Enable real-time graph updates for web UI via WebSocket connections.
+
+### Added
+
+#### WebSocket API (`src/api/websocket/`)
+- **WebSocket endpoint** `/ws` - Real-time event streaming
+- **Event types** - 5 graph mutation events:
+  - `EntityCreated`, `EntityUpdated`, `EntityDeleted`
+  - `RelationCreated`, `RelationDeleted`
+- **Global EventBroadcaster** - Zero-overhead when not enabled (OnceLock pattern)
+- **Event batching** - 50ms debounce, max 100 events per batch
+- **Sequence tracking** - Gap detection for missed events
+
+#### HTTP Server (`src/api/http.rs`)
+- **Health endpoint** `/health` - Server status check
+- **CORS support** - Configured for all origins (development)
+
+#### CLI Enhancements (`src/main.rs`)
+- **`--mode` flag** - Choose server mode:
+  - `stdio` (default): MCP protocol for AI Agents
+  - `http`: REST API + WebSocket for UI (port 3030)
+  - `both`: Run both modes simultaneously
+- **`--help` flag** - Display usage information
+- **Environment variable** `MEMORY_SERVER_MODE` - Override mode
+
+#### UI WebSocket Client (`ui/js/websocket.js`)
+- **MemoryGraphWS class** - Event emitter pattern for graph updates
+- **Auto-reconnect** - Exponential backoff (1s → 30s max)
+- **Heartbeat** - 30s ping/pong for connection health
+- **Status indicator** - Visual connection state in UI
+
+### Changed
+- **Dependencies**: Added `axum 0.7`, `tokio` (full), `tower-http 0.5`, `chrono 0.4`
+- **CRUD functions**: Now emit WebSocket events via `ws_helpers`
+- **Test count**: 67 lib tests + 7 event sourcing + 8 integration = 82 total
+
+### Technical Details
+- **Architecture**: Event Sourcing pattern - WebSocket as "Live Projection"
+- **Protocol**: JSON messages with `type`, `event`, `sequence_id`, `timestamp`
+- **Documentation**: See `docs/proposal/Proposed-WebSocket-UI.md` for full spec
+
+---
+
 ## [1.2.0] - 2026-01-11
 
 ### 🧠 Inference Engine Release

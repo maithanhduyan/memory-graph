@@ -17,6 +17,7 @@
         <h1 class="logo">
           <span class="logo-icon">🧠</span>
           <span class="logo-text">Memory Graph</span>
+          <span id="ws-status" class="ws-status disconnected" title="WebSocket status"></span>
         </h1>
         <button class="sidebar-toggle" id="toggle-left" title="Toggle sidebar">◀</button>
       </div>
@@ -116,6 +117,57 @@
               <button class="btn btn-secondary btn-sm" onclick="showAddRelationModal()">➕ Relation</button>
               <button class="btn btn-secondary btn-sm" id="btn-export">💾 Export</button>
             </div>
+          </div>
+        </section>
+
+        <!-- Event Sourcing Stats -->
+        <section class="panel" data-panel="event-sourcing">
+          <div class="panel-header">
+            <span>⚡ Event Sourcing</span>
+            <span class="panel-toggle">▼</span>
+          </div>
+          <div class="panel-body">
+            <div class="es-stats-grid">
+              <div class="es-stat">
+                <span class="es-stat-icon">📝</span>
+                <div class="es-stat-content">
+                  <span class="es-stat-value" id="es-total-events">-</span>
+                  <span class="es-stat-label">Total Events</span>
+                </div>
+              </div>
+              <div class="es-stat">
+                <span class="es-stat-icon">📸</span>
+                <div class="es-stat-content">
+                  <span class="es-stat-value" id="es-last-snapshot">-</span>
+                  <span class="es-stat-label">Last Snapshot</span>
+                </div>
+              </div>
+              <div class="es-stat">
+                <span class="es-stat-icon">📦</span>
+                <div class="es-stat-content">
+                  <span class="es-stat-value" id="es-archive-count">-</span>
+                  <span class="es-stat-label">Archives</span>
+                </div>
+              </div>
+              <div class="es-stat">
+                <span class="es-stat-icon">💾</span>
+                <div class="es-stat-content">
+                  <span class="es-stat-value" id="es-total-size">-</span>
+                  <span class="es-stat-label">Total Size</span>
+                </div>
+              </div>
+            </div>
+            <div class="es-events-breakdown" id="es-events-breakdown">
+              <div class="es-breakdown-title">Events by Type</div>
+              <div class="es-breakdown-items" id="es-breakdown-items">
+                <span class="es-breakdown-empty">No data available</span>
+              </div>
+            </div>
+            <div class="es-status" id="es-status">
+              <span class="es-status-dot"></span>
+              <span class="es-status-text">Checking status...</span>
+            </div>
+            <button class="btn btn-secondary btn-sm btn-full" id="btn-refresh-es-stats">🔄 Refresh Stats</button>
           </div>
         </section>
       </div>
@@ -324,6 +376,7 @@
   <script src="js/graph.js"></script>
   <script src="js/inference.js"></script>
   <script src="js/editor.js"></script>
+  <script src="js/websocket.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

@@ -3,7 +3,7 @@
         "memory": {
             "type": "stdio",
             "command": "${workspaceFolder}/target/release/memory-server.exe",
-            "args": [],
+            "args": ["--mode","both"],
             "env": {
                 "MEMORY_FILE_PATH": "${workspaceFolder}/memory.jsonl"
             }
