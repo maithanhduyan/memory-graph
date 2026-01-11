@@ -58,7 +58,51 @@ function rebuildGraph() {
     edgeLabelColor: { color: '#f59e0b' },
     edgeLabelSize: 10,
     minCameraRatio: 0.05,
-    maxCameraRatio: 10
+    maxCameraRatio: 10,
+    // Hover label styles - dark background with light text
+    labelHoverBgColor: '#1e293b',
+    labelHoverColor: { color: '#f8fafc' },
+    labelHoverShadow: 'none',
+    labelHoverShadowColor: 'transparent',
+    // Highlighted node label (when selected/hovered)
+    hoverRenderer: (context, data, settings) => {
+      const size = data.size + 4;
+      const label = data.label;
+      const fontSize = settings.labelSize || 14;
+
+      // Draw larger node circle
+      context.beginPath();
+      context.arc(data.x, data.y, size, 0, Math.PI * 2);
+      context.fillStyle = data.color;
+      context.fill();
+      context.strokeStyle = '#f8fafc';
+      context.lineWidth = 2;
+      context.stroke();
+
+      // Draw label with dark background
+      if (label) {
+        context.font = `bold ${fontSize}px "Inter", sans-serif`;
+        const textWidth = context.measureText(label).width;
+        const padding = 6;
+        const bgX = data.x + size + 4;
+        const bgY = data.y - fontSize / 2 - padding;
+        const bgWidth = textWidth + padding * 2;
+        const bgHeight = fontSize + padding * 2;
+
+        // Dark background
+        context.fillStyle = '#1e293b';
+        context.strokeStyle = '#475569';
+        context.lineWidth = 1;
+        context.beginPath();
+        context.roundRect(bgX, bgY, bgWidth, bgHeight, 4);
+        context.fill();
+        context.stroke();
+
+        // Light text
+        context.fillStyle = '#f8fafc';
+        context.fillText(label, bgX + padding, data.y + fontSize / 3);
+      }
+    }
   });
 
   setupGraphEvents();
