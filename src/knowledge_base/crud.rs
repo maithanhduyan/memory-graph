@@ -7,9 +7,9 @@ use crate::utils::time::current_timestamp;
 
 use super::KnowledgeBase;
 
-/// Create new entities (thread-safe: holds lock during entire operation)
+/// Create new entities (thread-safe: holds write lock during entire operation)
 pub fn create_entities(kb: &KnowledgeBase, entities: Vec<Entity>) -> McpResult<Vec<Entity>> {
-    let mut graph = kb.graph.lock().unwrap();
+    let mut graph = kb.graph.write().unwrap();
     let existing_names: HashSet<String> = graph.entities.iter().map(|e| e.name.clone()).collect();
     let now = current_timestamp();
 
@@ -34,9 +34,9 @@ pub fn create_entities(kb: &KnowledgeBase, entities: Vec<Entity>) -> McpResult<V
     Ok(created)
 }
 
-/// Create new relations (thread-safe: holds lock during entire operation)
+/// Create new relations (thread-safe: holds write lock during entire operation)
 pub fn create_relations(kb: &KnowledgeBase, relations: Vec<Relation>) -> McpResult<Vec<Relation>> {
-    let mut graph = kb.graph.lock().unwrap();
+    let mut graph = kb.graph.write().unwrap();
     let entity_names: HashSet<String> = graph.entities.iter().map(|e| e.name.clone()).collect();
     let now = current_timestamp();
 
@@ -69,12 +69,12 @@ pub fn create_relations(kb: &KnowledgeBase, relations: Vec<Relation>) -> McpResu
     Ok(created)
 }
 
-/// Add observations to entities (thread-safe: holds lock during entire operation)
+/// Add observations to entities (thread-safe: holds write lock during entire operation)
 pub fn add_observations(
     kb: &KnowledgeBase,
     observations: Vec<Observation>,
 ) -> McpResult<Vec<Observation>> {
-    let mut graph = kb.graph.lock().unwrap();
+    let mut graph = kb.graph.write().unwrap();
     let mut added = Vec::new();
     let now = current_timestamp();
 
@@ -105,9 +105,9 @@ pub fn add_observations(
     Ok(added)
 }
 
-/// Delete entities (thread-safe: holds lock during entire operation)
+/// Delete entities (thread-safe: holds write lock during entire operation)
 pub fn delete_entities(kb: &KnowledgeBase, entity_names: Vec<String>) -> McpResult<()> {
-    let mut graph = kb.graph.lock().unwrap();
+    let mut graph = kb.graph.write().unwrap();
     let names_to_delete: HashSet<String> = entity_names.into_iter().collect();
 
     graph
@@ -121,12 +121,12 @@ pub fn delete_entities(kb: &KnowledgeBase, entity_names: Vec<String>) -> McpResu
     Ok(())
 }
 
-/// Delete observations from entities (thread-safe: holds lock during entire operation)
+/// Delete observations from entities (thread-safe: holds write lock during entire operation)
 pub fn delete_observations(
     kb: &KnowledgeBase,
     deletions: Vec<ObservationDeletion>,
 ) -> McpResult<()> {
-    let mut graph = kb.graph.lock().unwrap();
+    let mut graph = kb.graph.write().unwrap();
 
     for deletion in deletions {
         if let Some(entity) = graph
@@ -143,9 +143,9 @@ pub fn delete_observations(
     Ok(())
 }
 
-/// Delete relations (thread-safe: holds lock during entire operation)
+/// Delete relations (thread-safe: holds write lock during entire operation)
 pub fn delete_relations(kb: &KnowledgeBase, relations: Vec<Relation>) -> McpResult<()> {
-    let mut graph = kb.graph.lock().unwrap();
+    let mut graph = kb.graph.write().unwrap();
 
     let to_delete: HashSet<String> = relations
         .iter()

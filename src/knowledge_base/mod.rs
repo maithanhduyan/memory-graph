@@ -12,7 +12,7 @@ mod traversal;
 use std::env;
 use std::fs;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::RwLock;
 
 use crate::types::{
     Entity, KnowledgeGraph, McpResult, Observation, ObservationDeletion,
@@ -21,9 +21,10 @@ use crate::types::{
 use crate::utils::time::get_current_user;
 
 /// Knowledge base with in-memory cache for thread-safe operations
+/// Uses RwLock for better concurrent read performance (read-heavy workload)
 pub struct KnowledgeBase {
     pub(crate) memory_file_path: String,
-    pub(crate) graph: Mutex<KnowledgeGraph>,
+    pub(crate) graph: RwLock<KnowledgeGraph>,
     pub(crate) current_user: String,
 }
 
@@ -52,7 +53,7 @@ impl KnowledgeBase {
 
         Self {
             memory_file_path,
-            graph: Mutex::new(graph),
+            graph: RwLock::new(graph),
             current_user,
         }
     }
@@ -64,7 +65,7 @@ impl KnowledgeBase {
 
         Self {
             memory_file_path: file_path,
-            graph: Mutex::new(graph),
+            graph: RwLock::new(graph),
             current_user,
         }
     }
@@ -74,7 +75,7 @@ impl KnowledgeBase {
     pub fn for_testing(file_path: String, user: String) -> Self {
         Self {
             memory_file_path: file_path,
-            graph: Mutex::new(KnowledgeGraph::default()),
+            graph: RwLock::new(KnowledgeGraph::default()),
             current_user: user,
         }
     }
@@ -112,11 +113,12 @@ impl KnowledgeBase {
     }
 
     /// Get a clone of the current graph (thread-safe read)
+    /// Uses read lock - allows multiple concurrent readers
     pub(crate) fn load_graph(&self) -> McpResult<KnowledgeGraph> {
-        Ok(self.graph.lock().unwrap().clone())
+        Ok(self.graph.read().unwrap().clone())
     }
 
-    /// Persist graph to file (internal helper, expects caller to hold lock)
+    /// Persist graph to file (internal helper, expects caller to hold write lock)
     pub(crate) fn persist_to_file(&self, graph: &KnowledgeGraph) -> McpResult<()> {
         // Ensure parent directory exists
         if let Some(parent) = Path::new(&self.memory_file_path).parent() {
