@@ -3,204 +3,233 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Memory Graph - Inference Lab</title>
+  <title>Memory Graph - Knowledge Visualization</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="css/styles.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sigma.js/2.4.0/sigma.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/graphology/0.25.4/graphology.umd.min.js"></script>
 </head>
 <body>
-  <!-- Sidebar -->
-  <div id="sidebar">
-    <div id="sidebar-header">
-      <h1>
-        <span>🧠</span>
-        <span class="title-text">Memory Graph</span>
-        <span class="badge">LAB</span>
-      </h1>
-      <button id="collapse-btn" title="Toggle Sidebar"> ◀ </button>
-    </div>
-
-    <!-- Collapsed Tabs (visible when sidebar collapsed) -->
-    <div class="collapsed-tabs">
-      <div class="collapsed-tab active" data-tab="tab-inference" title="Inference">🔬</div>
-      <div class="collapsed-tab" data-tab="tab-entities" title="Entities">📦</div>
-      <div class="collapsed-tab" data-tab="tab-relations" title="Relations">🔗</div>
-    </div>
-
-    <!-- Tabs -->
-    <div class="tabs">
-      <div class="tab active" data-tab="tab-inference">🔬 Inference</div>
-      <div class="tab" data-tab="tab-entities">📦 Entities</div>
-      <div class="tab" data-tab="tab-relations">🔗 Relations</div>
-    </div>
-
-    <!-- Tab: Inference -->
-    <div id="tab-inference" class="tab-content active">
-      <!-- Stats Panel -->
-      <div class="panel" data-panel="stats">
-        <div class="panel-header">
-          <span>📊 Statistics</span>
-          <span class="collapse-icon">▼</span>
-        </div>
-        <div class="panel-content">
-          <div class="stats-grid">
-            <div class="stat-card">
-              <div class="stat-value" id="stat-entities">-</div>
-              <div class="stat-label">Entities</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-value" id="stat-relations">-</div>
-              <div class="stat-label">Relations</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-value" id="stat-types">-</div>
-              <div class="stat-label">Types</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-value" id="stat-observations">-</div>
-              <div class="stat-label">Observations</div>
-            </div>
-          </div>
-        </div>
+  <div id="app-root">
+    <!-- Left Sidebar - Filters & Controls -->
+    <aside id="sidebar-left" class="sidebar">
+      <div class="sidebar-header">
+        <h1 class="logo">
+          <span class="logo-icon">🧠</span>
+          <span class="logo-text">Memory Graph</span>
+        </h1>
+        <button class="sidebar-toggle" id="toggle-left" title="Toggle sidebar">◀</button>
       </div>
 
-      <!-- Legend Panel -->
-      <div class="panel" data-panel="legend">
-        <div class="panel-header">
-          <span>🎨 Legend</span>
-          <span class="collapse-icon">▼</span>
+      <div class="sidebar-content">
+        <!-- Search -->
+        <div class="search-wrapper">
+          <input type="search" id="graph-search" placeholder="Search nodes..." autocomplete="off">
+          <span class="search-icon">🔍</span>
+          <div id="search-results" class="search-results"></div>
         </div>
-        <div class="panel-content">
-          <div class="legend-grid" id="legend-grid"></div>
-        </div>
+
+        <!-- Entity Types Filter -->
+        <section class="panel" data-panel="types">
+          <div class="panel-header">
+            <span>📦 Entity Types</span>
+            <span class="panel-toggle">▼</span>
+          </div>
+          <div class="panel-body">
+            <div id="type-filters" class="filter-list"></div>
+          </div>
+        </section>
+
+        <!-- Relation Types Filter -->
+        <section class="panel" data-panel="relations">
+          <div class="panel-header">
+            <span>🔗 Relation Types</span>
+            <span class="panel-toggle">▼</span>
+          </div>
+          <div class="panel-body">
+            <div id="relation-filters" class="filter-list"></div>
+          </div>
+        </section>
+
+        <!-- Inference Lab -->
+        <section class="panel" data-panel="inference">
+          <div class="panel-header">
+            <span>🧪 Inference Lab</span>
+            <span class="panel-toggle">▼</span>
+          </div>
+          <div class="panel-body">
+            <div class="form-group">
+              <label>Start Entity</label>
+              <select id="entity-select">
+                <option value="">Click a node or select...</option>
+              </select>
+            </div>
+
+            <div class="slider-group">
+              <label>
+                <span>Max Depth</span>
+                <span id="depth-value">3</span>
+              </label>
+              <input type="range" id="max-depth" min="1" max="5" value="3">
+            </div>
+
+            <div class="slider-group">
+              <label>
+                <span>Min Confidence</span>
+                <span id="confidence-value">0.50</span>
+              </label>
+              <input type="range" id="min-confidence" min="0" max="100" value="50">
+            </div>
+
+            <button class="btn btn-primary btn-full" id="run-inference" disabled>
+              🧪 Run Inference
+            </button>
+
+            <div id="inference-results" class="inference-results">
+              <div class="result-empty">
+                <div class="icon">🔍</div>
+                <p>Select an entity to discover hidden relations</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Data Management -->
+        <section class="panel" data-panel="data">
+          <div class="panel-header">
+            <span>📊 Data</span>
+            <span class="panel-toggle">▼</span>
+          </div>
+          <div class="panel-body">
+            <div class="stats-row">
+              <div class="stat">
+                <span class="stat-value" id="stat-entities">0</span>
+                <span class="stat-label">Entities</span>
+              </div>
+              <div class="stat">
+                <span class="stat-value" id="stat-relations">0</span>
+                <span class="stat-label">Relations</span>
+              </div>
+            </div>
+            <div class="btn-group">
+              <button class="btn btn-secondary btn-sm" onclick="showAddEntityModal()">➕ Entity</button>
+              <button class="btn btn-secondary btn-sm" onclick="showAddRelationModal()">➕ Relation</button>
+              <button class="btn btn-secondary btn-sm" id="btn-export">💾 Export</button>
+            </div>
+          </div>
+        </section>
       </div>
 
-      <!-- Inference Lab -->
-      <div class="panel" data-panel="inference">
-        <div class="panel-header">
-          <span>🧪 Inference Lab</span>
-          <span class="collapse-icon">▼</span>
-        </div>
-        <div class="panel-content">
-          <div class="form-group">
-            <label>Select Entity</label>
-            <select id="entity-select">
-              <option value="">Select an entity...</option>
-            </select>
-          </div>
+      <div class="sidebar-footer">
+        <span>v1.2.0</span>
+      </div>
+    </aside>
 
-          <div class="slider-group">
-            <label>
-              <span>Max Depth</span>
-              <span id="depth-value">3</span>
-            </label>
-            <input type="range" id="max-depth" min="1" max="5" value="3">
-          </div>
-
-          <div class="slider-group">
-            <label>
-              <span>Min Confidence</span>
-              <span id="confidence-value">0.50</span>
-            </label>
-            <input type="range" id="min-confidence" min="0" max="100" value="50">
-          </div>
-
-          <button class="btn btn-primary btn-full" id="run-inference" disabled>
-            <span>🧪</span>
-            <span>Run Inference</span>
+    <!-- Graph Container -->
+    <main id="graph-container">
+      <!-- Controls overlay -->
+      <div id="graph-controls">
+        <div class="control-group">
+          <button class="control-btn" id="btn-zoom-in" title="Zoom in">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35M11 8v6M8 11h6"/>
+            </svg>
+          </button>
+          <button class="control-btn" id="btn-zoom-out" title="Zoom out">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35M8 11h6"/>
+            </svg>
+          </button>
+          <button class="control-btn" id="btn-reset" title="Reset view">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="10"/>
+            </svg>
+          </button>
+          <button class="control-btn" id="btn-fullscreen" title="Fullscreen">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+            </svg>
           </button>
         </div>
+        <div class="control-group">
+          <button class="control-btn" id="btn-toggle-labels" title="Toggle edge labels">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 7V4h16v3M9 20h6M12 4v16"/>
+            </svg>
+          </button>
+        </div>
+      </div>
 
-        <!-- Inference Results -->
-        <div id="inference-results">
-          <div class="result-empty">
-            <div class="icon">🔍</div>
-            <div>Select an entity and run inference<br>to discover hidden relations</div>
+      <!-- Sigma canvas container -->
+      <div id="sigma-container"></div>
+
+      <!-- Graph title overlay -->
+      <div id="graph-title">
+        <h2>Knowledge Graph</h2>
+        <p id="graph-subtitle">Loading...</p>
+      </div>
+    </main>
+
+    <!-- Right Sidebar - Details -->
+    <aside id="sidebar-right" class="sidebar">
+      <button class="sidebar-toggle" id="toggle-right" title="Toggle details">▶</button>
+
+      <div class="sidebar-content">
+        <!-- Node Details -->
+        <div id="node-details" class="detail-panel">
+          <div class="detail-header">
+            <span class="detail-dot" id="detail-dot"></span>
+            <div class="detail-info">
+              <h3 id="detail-title">No Selection</h3>
+              <span class="detail-type" id="detail-type">Click a node to view details</span>
+            </div>
+            <button class="detail-close" id="close-detail">✕</button>
+          </div>
+
+          <div class="detail-body" id="detail-body">
+            <section class="detail-section">
+              <h4>📝 Observations</h4>
+              <ul id="detail-observations" class="observation-list">
+                <li class="empty">No observations</li>
+              </ul>
+            </section>
+
+            <section class="detail-section">
+              <h4>🔗 Connections</h4>
+              <div id="detail-connections" class="connection-list">
+                <p class="empty">No connections</p>
+              </div>
+            </section>
+
+            <section class="detail-section">
+              <h4>⚙️ Actions</h4>
+              <div class="action-buttons">
+                <button class="btn btn-sm" id="btn-edit-node">✏️ Edit</button>
+                <button class="btn btn-sm btn-danger" id="btn-delete-node">🗑️ Delete</button>
+              </div>
+            </section>
           </div>
         </div>
+
+        <!-- Legend -->
+        <section class="panel" data-panel="legend">
+          <div class="panel-header">
+            <span>🎨 Legend</span>
+            <span class="panel-toggle">▼</span>
+          </div>
+          <div class="panel-body">
+            <div id="legend-grid" class="legend-grid"></div>
+          </div>
+        </section>
       </div>
-
-
-    </div>
-
-    <!-- Tab: Entities -->
-    <div id="tab-entities" class="tab-content">
-      <div class="panel-content">
-        <div class="search-box">
-          <input type="text" id="entity-search" placeholder="Search entities...">
-        </div>
-        <button class="btn btn-success btn-full" onclick="showAddEntityModal()" style="margin-bottom: 12px;">
-          ➕ Add Entity
-        </button>
-        <div class="item-list" id="entity-list"></div>
-      </div>
-    </div>
-
-    <!-- Tab: Relations -->
-    <div id="tab-relations" class="tab-content">
-      <div class="panel-content">
-        <div class="search-box">
-          <input type="text" id="relation-search" placeholder="Search relations...">
-        </div>
-        <button class="btn btn-success btn-full" onclick="showAddRelationModal()" style="margin-bottom: 12px;">
-          ➕ Add Relation
-        </button>
-        <div class="item-list" id="relation-list"></div>
-      </div>
-    </div>
-
-    <div id="sidebar-footer">
-        <p class=""><span>Version: v1.2.0</span></p>
-    </div>
-
+    </aside>
   </div>
 
-  <!-- Graph Container -->
-  <div id="graph-wrapper">
-    <div id="graph-toolbar">
-      <button class="toolbar-btn" id="btn-zoom-in">🔍+</button>
-      <button class="toolbar-btn" id="btn-zoom-out">🔍-</button>
-      <button class="toolbar-btn" id="btn-reset">↺</button>
-      <button class="toolbar-btn" id="btn-toggle-obs">👁 Show Obs</button>
-      <button class="toolbar-btn active" id="btn-toggle-labels">🏷️ Labels</button>
-      <button class="toolbar-btn" id="btn-export">💾 Export</button>
-    </div>
-
-    <div id="mode-badge">
-      ✏️ Edit Mode
-    </div>
-
-    <div id="container"></div>
-  </div>
-
-  <!-- Tooltip (on hover) -->
-  <div id="tooltip">
+  <!-- Tooltip (hover) -->
+  <div id="tooltip" class="tooltip">
     <h3 id="tooltip-title"></h3>
-    <div id="tooltip-type" class="type"></div>
+    <div id="tooltip-type" class="tooltip-type"></div>
     <ul id="tooltip-observations"></ul>
-  </div>
-
-  <!-- Node Detail Panel (on click - persistent) -->
-  <div id="node-detail-panel">
-    <div class="panel-close" onclick="closeNodeDetail()">✕</div>
-    <div class="node-header">
-      <span class="node-dot" id="detail-dot"></span>
-      <div class="node-info">
-        <h3 id="detail-title"></h3>
-        <span class="node-type" id="detail-type"></span>
-      </div>
-    </div>
-
-    <div class="detail-section">
-      <h4>📝 Observations</h4>
-      <ul id="detail-observations"></ul>
-    </div>
-
-    <div class="detail-section">
-      <h4>🔗 Connections</h4>
-      <div id="detail-connections"></div>
-    </div>
   </div>
 
   <!-- Entity Modal -->
@@ -287,6 +316,9 @@
       </div>
     </div>
   </div>
+
+  <!-- Toast container -->
+  <div id="toast-container"></div>
 
   <!-- Scripts -->
   <script src="js/graph.js"></script>

@@ -1,146 +1,254 @@
-// Main application module
+/**
+ * Memory Graph - Main Application
+ * Modern UI inspired by Sigma.js Demo
+ */
 
-let editor = null;
+// Global state
 let graph = null;
 let renderer = null;
-let showObservations = false;
-let showEdgeLabels = true;
-let inferredEdges = [];
+let editor = null;
 let selectedNode = null;
+let showEdgeLabels = true;
+let filters = {
+  entityTypes: {},
+  relationTypes: {}
+};
 
 // Initialize application
 async function init() {
-  editor = new DataEditor();
-
-  // Load data
   try {
+    // Load data
+    editor = new DataEditor();
     await editor.loadFromURL('../memory.jsonl');
-  } catch (e) {
-    console.error('Failed to load memory.jsonl:', e);
-    showToast('Failed to load data file', 'error');
-    return;
-  }
 
-  // Set up data change handler
-  editor.onDataChange = (entities, relations) => {
+    // Initialize filters (all enabled by default)
+    initFilters();
+
+    // Build graph
     rebuildGraph();
-    updateStats();
-    updateEntityList();
-    updateRelationList();
-    populateEntitySelect();
-  };
 
-  // Initial render
-  rebuildGraph();
-  updateStats();
-  buildLegend();
-  populateEntitySelect();
-  updateEntityList();
-  updateRelationList();
-  setupEventListeners();
+    // Update UI
+    updateStats();
+    buildLegend();
+    populateEntitySelect();
+    updateSearchSuggestions();
+
+    // Setup event handlers
+    setupEventHandlers();
+    setupGraphEvents();
+    setupSearch();
+
+    // Update graph subtitle
+    document.getElementById('graph-subtitle').textContent =
+      `${editor.entities.length} entities, ${editor.relations.length} relations`;
+
+    console.log('Memory Graph initialized');
+  } catch (error) {
+    console.error('Failed to initialize:', error);
+    showToast('Failed to load graph data', 'error');
+  }
 }
 
-// Rebuild graph visualization
+// Initialize filters from data
+function initFilters() {
+  // Entity types
+  const entityTypes = [...new Set(editor.entities.map(e => e.entityType))].sort();
+  entityTypes.forEach(type => {
+    filters.entityTypes[type] = true;
+  });
+
+  // Relation types
+  const relationTypes = [...new Set(editor.relations.map(r => r.relationType))].sort();
+  relationTypes.forEach(type => {
+    filters.relationTypes[type] = true;
+  });
+
+  // Build filter UI
+  buildFilterUI();
+}
+
+// Build filter checkboxes
+function buildFilterUI() {
+  // Entity type filters
+  const typeFiltersEl = document.getElementById('type-filters');
+  typeFiltersEl.innerHTML = '';
+
+  const entityTypes = Object.keys(filters.entityTypes).sort();
+  entityTypes.forEach(type => {
+    const count = editor.entities.filter(e => e.entityType === type).length;
+    const color = GraphModule.colorByType(type);
+
+    const item = document.createElement('label');
+    item.className = 'filter-item';
+    item.innerHTML = `
+      <input type="checkbox" ${filters.entityTypes[type] ? 'checked' : ''} data-type="${type}">
+      <span class="filter-dot" style="background:${color}"></span>
+      <span class="filter-label">${type}</span>
+      <span class="filter-count">${count}</span>
+    `;
+    typeFiltersEl.appendChild(item);
+  });
+
+  // Relation type filters
+  const relationFiltersEl = document.getElementById('relation-filters');
+  relationFiltersEl.innerHTML = '';
+
+  const relationTypes = Object.keys(filters.relationTypes).sort();
+  relationTypes.forEach(type => {
+    const count = editor.relations.filter(r => r.relationType === type).length;
+
+    const item = document.createElement('label');
+    item.className = 'filter-item';
+    item.innerHTML = `
+      <input type="checkbox" ${filters.relationTypes[type] ? 'checked' : ''} data-relation="${type}">
+      <span class="filter-dot" style="background:#f59e0b"></span>
+      <span class="filter-label">${type}</span>
+      <span class="filter-count">${count}</span>
+    `;
+    relationFiltersEl.appendChild(item);
+  });
+}
+
+// Rebuild graph with current data
 function rebuildGraph() {
-  graph = GraphModule.buildGraph(editor.entities, editor.relations, showObservations);
+  graph = GraphModule.buildGraph(editor.entities, editor.relations, false);
 
   if (renderer) {
     renderer.kill();
   }
 
-  renderer = new Sigma(graph, document.getElementById("container"), {
+  renderer = new Sigma(graph, document.getElementById("sigma-container"), {
     renderEdgeLabels: showEdgeLabels,
-    labelDensity: 0.12,
-    labelGridCellSize: 150,
-    labelRenderedSizeThreshold: 10,
+    labelDensity: 0.1,
+    labelGridCellSize: 120,
+    labelRenderedSizeThreshold: 8,
     defaultEdgeColor: '#475569',
+    defaultEdgeType: 'arrow',
+    edgeArrowPosition: 'target',
+    edgeArrowSize: 4,
     labelColor: { color: '#e5e7eb' },
     edgeLabelColor: { color: '#f59e0b' },
     edgeLabelSize: 10,
     minCameraRatio: 0.05,
     maxCameraRatio: 10,
-    // Hover label styles - dark background with light text
-    labelHoverBgColor: '#1e293b',
-    labelHoverColor: { color: '#f8fafc' },
-    labelHoverShadow: 'none',
-    labelHoverShadowColor: 'transparent',
-    // Highlighted node label (when selected/hovered)
-    hoverRenderer: (context, data, settings) => {
-      const size = data.size + 4;
-      const label = data.label;
-      const fontSize = settings.labelSize || 14;
-
-      // Draw larger node circle
-      context.beginPath();
-      context.arc(data.x, data.y, size, 0, Math.PI * 2);
-      context.fillStyle = data.color;
-      context.fill();
-      context.strokeStyle = '#f8fafc';
-      context.lineWidth = 2;
-      context.stroke();
-
-      // Draw label with dark background
-      if (label) {
-        context.font = `bold ${fontSize}px "Inter", sans-serif`;
-        const textWidth = context.measureText(label).width;
-        const padding = 6;
-        const bgX = data.x + size + 4;
-        const bgY = data.y - fontSize / 2 - padding;
-        const bgWidth = textWidth + padding * 2;
-        const bgHeight = fontSize + padding * 2;
-
-        // Dark background
-        context.fillStyle = '#1e293b';
-        context.strokeStyle = '#475569';
-        context.lineWidth = 1;
-        context.beginPath();
-        context.roundRect(bgX, bgY, bgWidth, bgHeight, 4);
-        context.fill();
-        context.stroke();
-
-        // Light text
-        context.fillStyle = '#f8fafc';
-        context.fillText(label, bgX + padding, data.y + fontSize / 3);
-      }
-    }
+    defaultDrawNodeLabel: drawLabel,
+    defaultDrawNodeHover: drawHover
   });
+
+  // Apply filters
+  applyFilters();
 
   setupGraphEvents();
 }
 
+// Custom label renderer (dark background, light text)
+function drawLabel(context, data, settings) {
+  if (!data.label) return;
+
+  const size = settings.labelSize || 12;
+  const font = settings.labelFont || 'Inter, sans-serif';
+  const weight = settings.labelWeight || 'normal';
+
+  context.font = `${weight} ${size}px ${font}`;
+  const textWidth = context.measureText(data.label).width;
+  const padding = 4;
+
+  // Background
+  context.fillStyle = 'rgba(15, 23, 42, 0.9)';
+  context.fillRect(
+    data.x + data.size + 2,
+    data.y - size / 2 - padding,
+    textWidth + padding * 2,
+    size + padding * 2
+  );
+
+  // Text
+  context.fillStyle = '#e5e7eb';
+  context.fillText(data.label, data.x + data.size + 2 + padding, data.y + size / 3);
+}
+
+// Custom hover renderer (shows more info)
+function drawHover(context, data, settings) {
+  const size = settings.labelSize || 14;
+  const font = settings.labelFont || 'Inter, sans-serif';
+
+  // Draw larger node
+  context.beginPath();
+  context.arc(data.x, data.y, data.size + 4, 0, Math.PI * 2);
+  context.fillStyle = data.color;
+  context.fill();
+  context.strokeStyle = '#f8fafc';
+  context.lineWidth = 2;
+  context.stroke();
+
+  // Draw label with background
+  if (data.label) {
+    context.font = `bold ${size}px ${font}`;
+    const textWidth = context.measureText(data.label).width;
+    const padding = 8;
+    const x = data.x + data.size + 6;
+    const y = data.y - size / 2 - padding;
+
+    // Background
+    context.fillStyle = '#1e293b';
+    context.strokeStyle = '#475569';
+    context.lineWidth = 1;
+    context.beginPath();
+    context.roundRect(x, y, textWidth + padding * 2, size + padding * 2, 6);
+    context.fill();
+    context.stroke();
+
+    // Text
+    context.fillStyle = '#f8fafc';
+    context.fillText(data.label, x + padding, data.y + size / 3);
+  }
+}
+
+// Apply filters to graph
+function applyFilters() {
+  if (!graph || !renderer) return;
+
+  graph.forEachNode((node, attrs) => {
+    if (attrs.nodeType === 'entity') {
+      const entityType = attrs.entityType || 'Unknown';
+      const hidden = !filters.entityTypes[entityType];
+      graph.setNodeAttribute(node, 'hidden', hidden);
+    }
+  });
+
+  graph.forEachEdge((edge, attrs) => {
+    const relationType = attrs.label || 'unknown';
+    const hidden = !filters.relationTypes[relationType];
+    graph.setEdgeAttribute(edge, 'hidden', hidden);
+  });
+
+  renderer.refresh();
+}
+
 // Setup graph interaction events
 function setupGraphEvents() {
+  if (!renderer) return;
+
   const tooltip = document.getElementById('tooltip');
   const tooltipTitle = document.getElementById('tooltip-title');
   const tooltipType = document.getElementById('tooltip-type');
   const tooltipObs = document.getElementById('tooltip-observations');
 
+  // Hover - show tooltip
   renderer.on("enterNode", ({ node }) => {
-    // Don't show tooltip if detail panel is open for this node
     if (selectedNode === node) return;
 
     const attrs = graph.getNodeAttributes(node);
     tooltipTitle.textContent = attrs.fullName || attrs.label;
-    tooltipType.innerHTML = `<span class="type-badge">${attrs.nodeType}</span> ${attrs.entityType || ''}`;
-    tooltipObs.innerHTML = '';
+    tooltipType.textContent = attrs.entityType || '';
 
+    tooltipObs.innerHTML = '';
     if (attrs.observations && attrs.observations.length > 0) {
       attrs.observations.slice(0, 3).forEach(obs => {
         const li = document.createElement('li');
-        li.textContent = obs.length > 80 ? obs.substring(0, 80) + '...' : obs;
+        li.textContent = obs.length > 60 ? obs.substring(0, 60) + '...' : obs;
         tooltipObs.appendChild(li);
       });
-      if (attrs.observations.length > 3) {
-        const li = document.createElement('li');
-        li.style.color = '#64748b';
-        li.style.fontStyle = 'italic';
-        li.textContent = `+ ${attrs.observations.length - 3} more... (click to view all)`;
-        tooltipObs.appendChild(li);
-      }
-    } else if (attrs.fullText) {
-      const li = document.createElement('li');
-      li.textContent = attrs.fullText;
-      tooltipObs.appendChild(li);
     }
 
     tooltip.style.display = 'block';
@@ -150,339 +258,280 @@ function setupGraphEvents() {
     tooltip.style.display = 'none';
   });
 
+  // Move tooltip with mouse
+  renderer.getMouseCaptor().on("mousemove", (e) => {
+    tooltip.style.left = e.x + 15 + 'px';
+    tooltip.style.top = e.y + 15 + 'px';
+  });
+
+  // Click - select node and show details
   renderer.on("clickNode", ({ node }) => {
     const attrs = graph.getNodeAttributes(node);
     if (attrs.nodeType === 'entity') {
       selectedNode = node;
+      showNodeDetail(attrs.fullName || attrs.label, attrs);
+      highlightConnections(node);
 
-      // Update entity select for inference
+      // Update entity select
       document.getElementById('entity-select').value = attrs.fullName || attrs.label;
       document.getElementById('run-inference').disabled = false;
-
-      // Highlight in entity list
-      const listItems = document.querySelectorAll('#entity-list .list-item');
-      listItems.forEach(item => {
-        item.classList.toggle('selected', item.dataset.name === (attrs.fullName || attrs.label));
-      });
-
-      // Show node detail panel
-      showNodeDetail(attrs.fullName || attrs.label, attrs);
-
-      // Highlight connected edges
-      highlightConnections(node);
     }
   });
 
-  // Click on stage (background) to deselect
+  // Click stage - deselect
   renderer.on("clickStage", () => {
     closeNodeDetail();
-    resetHighlights();
   });
 }
 
-// Show node detail panel
+// Show node detail in right sidebar
 function showNodeDetail(entityName, attrs) {
-  const panel = document.getElementById('node-detail-panel');
-  const detailDot = document.getElementById('detail-dot');
-  const detailTitle = document.getElementById('detail-title');
-  const detailType = document.getElementById('detail-type');
-  const detailObs = document.getElementById('detail-observations');
-  const detailConns = document.getElementById('detail-connections');
+  document.getElementById('detail-title').textContent = entityName;
+  document.getElementById('detail-type').textContent = attrs.entityType || 'Unknown';
+  document.getElementById('detail-dot').style.background = attrs.color || '#3b82f6';
 
-  // Hide tooltip
-  document.getElementById('tooltip').style.display = 'none';
-
-  // Set header info
-  detailDot.style.background = GraphModule.colorByType(attrs.entityType);
-  detailTitle.textContent = entityName;
-  detailType.textContent = attrs.entityType;
-
-  // Set observations
-  detailObs.innerHTML = '';
+  // Observations
+  const obsList = document.getElementById('detail-observations');
+  obsList.innerHTML = '';
   if (attrs.observations && attrs.observations.length > 0) {
     attrs.observations.forEach(obs => {
       const li = document.createElement('li');
       li.textContent = obs;
-      detailObs.appendChild(li);
+      obsList.appendChild(li);
     });
   } else {
-    detailObs.innerHTML = '<li style="color: #64748b; font-style: italic;">No observations</li>';
+    obsList.innerHTML = '<li class="empty">No observations</li>';
   }
 
-  // Set connections
-  const connections = editor.getRelationsForEntity(entityName);
-  detailConns.innerHTML = '';
+  // Connections
+  const connectionsEl = document.getElementById('detail-connections');
+  connectionsEl.innerHTML = '';
 
-  if (connections.outgoing.length === 0 && connections.incoming.length === 0) {
-    detailConns.innerHTML = '<div style="color: #64748b; font-style: italic; padding: 8px;">No connections</div>';
+  const outgoing = editor.relations.filter(r => r.from === entityName);
+  const incoming = editor.relations.filter(r => r.to === entityName);
+
+  if (outgoing.length === 0 && incoming.length === 0) {
+    connectionsEl.innerHTML = '<p class="empty">No connections</p>';
   } else {
-    // Outgoing connections
-    if (connections.outgoing.length > 0) {
-      const outGroup = document.createElement('div');
-      outGroup.className = 'connection-group';
-      outGroup.innerHTML = `
-        <div class="connection-group-title">
-          <span>→ Outgoing</span>
-          <span class="count">${connections.outgoing.length}</span>
-        </div>
+    outgoing.forEach(rel => {
+      const item = document.createElement('div');
+      item.className = 'connection-item';
+      item.innerHTML = `
+        <span class="arrow">→</span>
+        <span class="relation">${rel.relationType}</span>
+        <span class="name">${rel.to}</span>
       `;
-      connections.outgoing.forEach(rel => {
-        const item = document.createElement('div');
-        item.className = 'connection-item';
-        item.onclick = () => focusOnNode(rel.to);
-        item.innerHTML = `
-          <span class="direction outgoing">→</span>
-          <div class="conn-info">
-            <div class="conn-name" title="${rel.to}">${rel.to}</div>
-            <div class="conn-type">${rel.relationType}</div>
-          </div>
-        `;
-        outGroup.appendChild(item);
-      });
-      detailConns.appendChild(outGroup);
-    }
+      item.onclick = () => focusOnNode(rel.to);
+      connectionsEl.appendChild(item);
+    });
 
-    // Incoming connections
-    if (connections.incoming.length > 0) {
-      const inGroup = document.createElement('div');
-      inGroup.className = 'connection-group';
-      inGroup.innerHTML = `
-        <div class="connection-group-title">
-          <span>← Incoming</span>
-          <span class="count">${connections.incoming.length}</span>
-        </div>
+    incoming.forEach(rel => {
+      const item = document.createElement('div');
+      item.className = 'connection-item';
+      item.innerHTML = `
+        <span class="arrow">←</span>
+        <span class="relation">${rel.relationType}</span>
+        <span class="name">${rel.from}</span>
       `;
-      connections.incoming.forEach(rel => {
-        const item = document.createElement('div');
-        item.className = 'connection-item';
-        item.onclick = () => focusOnNode(rel.from);
-        item.innerHTML = `
-          <span class="direction incoming">←</span>
-          <div class="conn-info">
-            <div class="conn-name" title="${rel.from}">${rel.from}</div>
-            <div class="conn-type">${rel.relationType}</div>
-          </div>
-        `;
-        inGroup.appendChild(item);
-      });
-      detailConns.appendChild(inGroup);
-    }
+      item.onclick = () => focusOnNode(rel.from);
+      connectionsEl.appendChild(item);
+    });
   }
 
-  panel.classList.add('active');
+  // Show right sidebar if collapsed
+  document.getElementById('sidebar-right').classList.remove('collapsed');
 }
 
-// Close node detail panel
+// Close node detail
 function closeNodeDetail() {
-  document.getElementById('node-detail-panel').classList.remove('active');
   selectedNode = null;
-  resetHighlights();
+  document.getElementById('detail-title').textContent = 'No Selection';
+  document.getElementById('detail-type').textContent = 'Click a node to view details';
+  document.getElementById('detail-observations').innerHTML = '<li class="empty">No observations</li>';
+  document.getElementById('detail-connections').innerHTML = '<p class="empty">No connections</p>';
+
+  // Reset graph highlights
+  if (renderer) {
+    renderer.setSetting('nodeReducer', null);
+    renderer.setSetting('edgeReducer', null);
+  }
 }
 
 // Focus camera on a node
 function focusOnNode(entityName) {
   const nodeId = `entity:${entityName}`;
   if (graph.hasNode(nodeId)) {
-    const attrs = graph.getNodeAttributes(nodeId);
+    const nodeDisplayData = renderer.getNodeDisplayData(nodeId);
+    if (nodeDisplayData) {
+      renderer.getCamera().animate(
+        { x: nodeDisplayData.x, y: nodeDisplayData.y, ratio: 0.5 },
+        { duration: 400 }
+      );
 
-    // Get current camera ratio, don't zoom in too much
-    const currentRatio = renderer.getCamera().getState().ratio;
-    const targetRatio = Math.min(currentRatio, 1.5); // Zoom in but not too close
-
-    // Animate camera to node
-    renderer.getCamera().animate({
-      x: attrs.x,
-      y: attrs.y,
-      ratio: targetRatio
-    }, { duration: 400 });
-
-    // Select the node after animation
-    setTimeout(() => {
-      selectedNode = nodeId;
-      showNodeDetail(entityName, attrs);
-      highlightConnections(nodeId);
-    }, 300);
+      setTimeout(() => {
+        const attrs = graph.getNodeAttributes(nodeId);
+        selectedNode = nodeId;
+        showNodeDetail(entityName, attrs);
+        highlightConnections(nodeId);
+      }, 200);
+    }
   }
 }
 
 // Highlight connections for selected node
 function highlightConnections(nodeId) {
-  // Reset all node/edge colors first
-  graph.forEachNode((node, attrs) => {
-    if (node.startsWith('entity:') || node.startsWith('type:')) {
-      graph.setNodeAttribute(node, 'highlighted', false);
-    }
-  });
+  const NODE_FADE = '#334155';
+  const EDGE_FADE = '#1e293b';
 
-  graph.forEachEdge((edge, attrs) => {
-    graph.setEdgeAttribute(edge, 'highlighted', false);
-  });
-
-  // Highlight selected node
-  graph.setNodeAttribute(nodeId, 'highlighted', true);
-
-  // Highlight connected edges and nodes
-  graph.forEachEdge(nodeId, (edge, attrs, source, target) => {
-    graph.setEdgeAttribute(edge, 'highlighted', true);
-    if (source !== nodeId) graph.setNodeAttribute(source, 'highlighted', true);
-    if (target !== nodeId) graph.setNodeAttribute(target, 'highlighted', true);
-  });
-
-  // Apply visual changes via reducers
   renderer.setSetting('nodeReducer', (node, data) => {
-    const highlighted = graph.getNodeAttribute(node, 'highlighted');
-    if (selectedNode && !highlighted && node !== selectedNode) {
-      return { ...data, color: '#334155', label: null };
+    if (node === nodeId) {
+      return { ...data, zIndex: 2 };
     }
-    return data;
+    if (graph.hasEdge(node, nodeId) || graph.hasEdge(nodeId, node)) {
+      return { ...data, zIndex: 1 };
+    }
+    return { ...data, color: NODE_FADE, label: '', zIndex: 0 };
   });
 
   renderer.setSetting('edgeReducer', (edge, data) => {
-    const highlighted = graph.getEdgeAttribute(edge, 'highlighted');
-    if (selectedNode && !highlighted) {
-      return { ...data, color: '#1e293b', size: 0.5 };
+    if (graph.hasExtremity(edge, nodeId)) {
+      return { ...data, size: 2, zIndex: 1 };
     }
-    if (highlighted) {
-      return { ...data, color: '#22c55e', size: 3 };
-    }
-    return data;
+    return { ...data, color: EDGE_FADE, hidden: true };
   });
-
-  renderer.refresh();
 }
 
-// Reset node/edge highlights
-function resetHighlights() {
-  renderer.setSetting('nodeReducer', null);
-  renderer.setSetting('edgeReducer', null);
-  renderer.refresh();
-}
-
-// Update statistics display
+// Update statistics
 function updateStats() {
-  const stats = GraphModule.calculateStats(editor.entities, editor.relations);
-  document.getElementById('stat-entities').textContent = stats.entities;
-  document.getElementById('stat-relations').textContent = stats.relations;
-  document.getElementById('stat-types').textContent = stats.types;
-  document.getElementById('stat-observations').textContent = stats.observations;
+  document.getElementById('stat-entities').textContent = editor.entities.length;
+  document.getElementById('stat-relations').textContent = editor.relations.length;
 }
 
 // Build legend
 function buildLegend() {
   const legendGrid = document.getElementById('legend-grid');
-  legendGrid.innerHTML = '';
+  const types = [...new Set(editor.entities.map(e => e.entityType))].sort();
 
-  const types = editor.getEntityTypes();
-  types.forEach(type => {
-    const item = document.createElement('div');
-    item.className = 'legend-item';
-    item.innerHTML = `<span class="legend-dot" style="background:${GraphModule.colorByType(type)}"></span>${type}`;
-    legendGrid.appendChild(item);
-  });
-
-  // Add special legend items
-  const relItem = document.createElement('div');
-  relItem.className = 'legend-item';
-  relItem.innerHTML = `<span class="legend-dot" style="background:#f59e0b"></span>Relation`;
-  legendGrid.appendChild(relItem);
-
-  const inferItem = document.createElement('div');
-  inferItem.className = 'legend-item';
-  inferItem.innerHTML = `<span class="legend-dot" style="background:#8b5cf6"></span>Inferred`;
-  legendGrid.appendChild(inferItem);
+  legendGrid.innerHTML = types.map(type => `
+    <div class="legend-item">
+      <span class="legend-dot" style="background:${GraphModule.colorByType(type)}"></span>
+      <span>${type}</span>
+    </div>
+  `).join('');
 }
 
 // Populate entity select dropdown
 function populateEntitySelect() {
   const select = document.getElementById('entity-select');
-  select.innerHTML = '<option value="">Select an entity...</option>';
+  select.innerHTML = '<option value="">Click a node or select...</option>';
 
-  const groupedEntities = {};
   editor.entities.forEach(e => {
-    if (!groupedEntities[e.entityType]) groupedEntities[e.entityType] = [];
-    groupedEntities[e.entityType].push(e.name);
+    const opt = document.createElement('option');
+    opt.value = e.name;
+    opt.textContent = e.name;
+    select.appendChild(opt);
+  });
+}
+
+// Update search suggestions
+function updateSearchSuggestions() {
+  // Now handled by live search
+}
+
+// Setup search functionality
+function setupSearch() {
+  const searchInput = document.getElementById('graph-search');
+  const searchResults = document.getElementById('search-results');
+  let selectedIndex = -1;
+
+  searchInput.addEventListener('input', () => {
+    const query = searchInput.value.trim().toLowerCase();
+
+    if (query.length < 1) {
+      searchResults.classList.remove('active');
+      return;
+    }
+
+    // Filter entities
+    const matches = editor.entities.filter(e =>
+      e.name.toLowerCase().includes(query) ||
+      e.entityType.toLowerCase().includes(query)
+    ).slice(0, 10);
+
+    if (matches.length === 0) {
+      searchResults.classList.remove('active');
+      return;
+    }
+
+    // Build results with highlighted text
+    searchResults.innerHTML = matches.map((e, i) => {
+      const name = e.name.replace(
+        new RegExp(`(${query})`, 'gi'),
+        '<mark>$1</mark>'
+      );
+      const color = GraphModule.colorByType(e.entityType);
+      return `
+        <div class="search-result-item ${i === 0 ? 'selected' : ''}" data-name="${e.name}">
+          <span class="dot" style="background:${color}"></span>
+          <span class="name">${name}</span>
+          <span class="type">${e.entityType}</span>
+        </div>
+      `;
+    }).join('');
+
+    searchResults.classList.add('active');
+    selectedIndex = 0;
   });
 
-  Object.entries(groupedEntities).sort().forEach(([type, names]) => {
-    const optgroup = document.createElement('optgroup');
-    optgroup.label = type;
-    names.sort().forEach(name => {
-      const option = document.createElement('option');
-      option.value = name;
-      option.textContent = name.length > 35 ? name.substring(0, 35) + '...' : name;
-      optgroup.appendChild(option);
+  // Keyboard navigation
+  searchInput.addEventListener('keydown', (e) => {
+    const items = searchResults.querySelectorAll('.search-result-item');
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+      updateSelection(items);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      selectedIndex = Math.max(selectedIndex - 1, 0);
+      updateSelection(items);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (items[selectedIndex]) {
+        selectSearchResult(items[selectedIndex].dataset.name);
+      }
+    } else if (e.key === 'Escape') {
+      searchResults.classList.remove('active');
+      searchInput.blur();
+    }
+  });
+
+  function updateSelection(items) {
+    items.forEach((item, i) => {
+      item.classList.toggle('selected', i === selectedIndex);
     });
-    select.appendChild(optgroup);
+  }
+
+  // Click on result
+  searchResults.addEventListener('click', (e) => {
+    const item = e.target.closest('.search-result-item');
+    if (item) {
+      selectSearchResult(item.dataset.name);
+    }
   });
 
-  // Also populate from/to selects in relation modal
-  populateRelationSelects();
-}
+  function selectSearchResult(entityName) {
+    searchInput.value = entityName;
+    searchResults.classList.remove('active');
+    focusOnNode(entityName);
+  }
 
-// Populate relation modal selects
-function populateRelationSelects() {
-  const fromSelect = document.getElementById('rel-from');
-  const toSelect = document.getElementById('rel-to');
-
-  if (!fromSelect || !toSelect) return;
-
-  [fromSelect, toSelect].forEach(select => {
-    const currentVal = select.value;
-    select.innerHTML = '<option value="">Select entity...</option>';
-    editor.entities.forEach(e => {
-      const option = document.createElement('option');
-      option.value = e.name;
-      option.textContent = e.name.length > 30 ? e.name.substring(0, 30) + '...' : e.name;
-      select.appendChild(option);
-    });
-    if (currentVal) select.value = currentVal;
+  // Close on click outside
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.search-wrapper')) {
+      searchResults.classList.remove('active');
+    }
   });
-}
-
-// Update entity list
-function updateEntityList() {
-  const list = document.getElementById('entity-list');
-  const searchQuery = document.getElementById('entity-search')?.value?.toLowerCase() || '';
-
-  const filtered = searchQuery
-    ? editor.searchEntities(searchQuery)
-    : editor.entities;
-
-  list.innerHTML = filtered.map(e => `
-    <div class="list-item" data-name="${e.name}">
-      <span class="dot" style="background:${GraphModule.colorByType(e.entityType)}"></span>
-      <span class="name" title="${e.name}">${e.name}</span>
-      <span class="type">${e.entityType}</span>
-      <span class="actions">
-        <button class="edit" onclick="editEntity('${e.name.replace(/'/g, "\\'")}')">✎</button>
-        <button class="delete" onclick="deleteEntity('${e.name.replace(/'/g, "\\'")}')">✕</button>
-      </span>
-    </div>
-  `).join('');
-}
-
-// Update relation list
-function updateRelationList() {
-  const list = document.getElementById('relation-list');
-  const searchQuery = document.getElementById('relation-search')?.value?.toLowerCase() || '';
-
-  const filtered = searchQuery
-    ? editor.relations.filter(r =>
-        r.from.toLowerCase().includes(searchQuery) ||
-        r.to.toLowerCase().includes(searchQuery) ||
-        r.relationType.toLowerCase().includes(searchQuery))
-    : editor.relations;
-
-  list.innerHTML = filtered.map(r => `
-    <div class="list-item" data-from="${r.from}" data-to="${r.to}" data-type="${r.relationType}">
-      <span class="dot" style="background:#f59e0b"></span>
-      <span class="name" title="${r.from} → ${r.to}">${r.from.substring(0, 15)}... → ${r.to.substring(0, 15)}...</span>
-      <span class="type">${r.relationType}</span>
-      <span class="actions">
-        <button class="delete" onclick="deleteRelation('${r.from.replace(/'/g, "\\'")}', '${r.to.replace(/'/g, "\\'")}', '${r.relationType}')">✕</button>
-      </span>
-    </div>
-  `).join('');
 }
 
 // Run inference
@@ -498,18 +547,17 @@ function runInferenceHandler() {
 
   const btn = document.getElementById('run-inference');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span><span>Running...</span>';
+  btn.textContent = '⏳ Running...';
 
   setTimeout(() => {
     const results = InferenceModule.runInference(entityName, editor.relations, maxDepth, minConf);
     displayInferenceResults(results);
-    highlightInferredEdges(results);
 
     btn.disabled = false;
-    btn.innerHTML = '<span>🧪</span><span>Run Inference</span>';
+    btn.textContent = '🧪 Run Inference';
 
     showToast(`Found ${results.length} inferred relations`, 'success');
-  }, 300);
+  }, 100);
 }
 
 // Display inference results
@@ -519,211 +567,64 @@ function displayInferenceResults(results) {
   if (results.length === 0) {
     container.innerHTML = `
       <div class="result-empty">
-        <div class="icon">🤷</div>
-        <div>No inferred relations found<br>Try adjusting parameters</div>
+        <div class="icon">🔍</div>
+        <p>No inferred relations found</p>
       </div>
     `;
     return;
   }
 
-  container.innerHTML = results.map((r, i) => {
-    const confPercent = (r.confidence * 100).toFixed(1);
-    const confColor = InferenceModule.getConfidenceColor(r.confidence);
-
+  container.innerHTML = results.map(r => {
+    const confClass = r.confidence >= 0.7 ? '' : r.confidence >= 0.5 ? 'low' : 'very-low';
     return `
-      <div class="inference-card" style="animation-delay: ${i * 30}ms">
-        <span class="relation-type">${r.relationType}</span>
-        <div class="path">${InferenceModule.formatPath(r.path, r.pathRelations)}</div>
-        <div class="confidence">
-          <span>Confidence:</span>
-          <div class="confidence-bar">
-            <div class="confidence-fill" style="width: ${confPercent}%; background: ${confColor}"></div>
-          </div>
-          <span class="confidence-value" style="color: ${confColor}">${confPercent}%</span>
+      <div class="result-item">
+        <div class="path">${InferenceModule.formatPath(r.path)}</div>
+        <div class="inferred">
+          <span>→ ${r.target}</span>
+          <span class="confidence ${confClass}">${(r.confidence * 100).toFixed(0)}%</span>
         </div>
       </div>
     `;
   }).join('');
 }
 
-// Highlight inferred edges on graph
-function highlightInferredEdges(results) {
-  // Remove old inferred edges
-  inferredEdges.forEach(edgeKey => {
-    if (graph.hasEdge(edgeKey)) {
-      graph.dropEdge(edgeKey);
-    }
-  });
-  inferredEdges = [];
+// Setup all event handlers
+function setupEventHandlers() {
+  // Sidebar toggles
+  document.getElementById('toggle-left').onclick = () => {
+    document.getElementById('sidebar-left').classList.toggle('collapsed');
+  };
 
-  // Add new inferred edges
-  results.forEach(r => {
-    const fromNode = `entity:${r.from}`;
-    const toNode = `entity:${r.to}`;
+  document.getElementById('toggle-right').onclick = () => {
+    document.getElementById('sidebar-right').classList.toggle('collapsed');
+  };
 
-    if (graph.hasNode(fromNode) && graph.hasNode(toNode)) {
-      const edgeKey = `inferred:${r.from}->${r.to}:${r.relationType}`;
-      if (!graph.hasEdge(edgeKey)) {
-        graph.addEdgeWithKey(edgeKey, fromNode, toNode, {
-          size: 3,
-          color: "#8b5cf6",
-          label: r.relationType,
-          edgeType: 'inferred'
-        });
-        inferredEdges.push(edgeKey);
-      }
-    }
-  });
-
-  renderer.refresh();
-}
-
-// Entity CRUD handlers
-function showAddEntityModal() {
-  document.getElementById('entity-modal-title').textContent = '➕ Add Entity';
-  document.getElementById('entity-name').value = '';
-  document.getElementById('entity-type').value = '';
-  document.getElementById('entity-observations').value = '';
-  document.getElementById('entity-modal').dataset.mode = 'add';
-  document.getElementById('entity-modal').classList.add('active');
-}
-
-function editEntity(name) {
-  const entity = editor.entities.find(e => e.name === name);
-  if (!entity) return;
-
-  document.getElementById('entity-modal-title').textContent = '✏️ Edit Entity';
-  document.getElementById('entity-name').value = entity.name;
-  document.getElementById('entity-type').value = entity.entityType;
-  document.getElementById('entity-observations').value = (entity.observations || []).join('\n');
-  document.getElementById('entity-modal').dataset.mode = 'edit';
-  document.getElementById('entity-modal').dataset.originalName = name;
-  document.getElementById('entity-modal').classList.add('active');
-}
-
-function saveEntity() {
-  const modal = document.getElementById('entity-modal');
-  const mode = modal.dataset.mode;
-  const name = document.getElementById('entity-name').value.trim();
-  const type = document.getElementById('entity-type').value.trim();
-  const observations = document.getElementById('entity-observations').value
-    .split('\n')
-    .map(o => o.trim())
-    .filter(o => o);
-
-  try {
-    if (mode === 'add') {
-      editor.addEntity({ name, entityType: type, observations });
-      showToast(`Entity "${name}" created`, 'success');
-    } else {
-      const originalName = modal.dataset.originalName;
-      editor.updateEntity(originalName, { name, entityType: type, observations });
-      showToast(`Entity "${name}" updated`, 'success');
-    }
-    modal.classList.remove('active');
-  } catch (e) {
-    showToast(e.message, 'error');
-  }
-}
-
-function deleteEntity(name) {
-  if (!confirm(`Delete entity "${name}" and all its relations?`)) return;
-
-  try {
-    editor.deleteEntity(name);
-    showToast(`Entity "${name}" deleted`, 'success');
-  } catch (e) {
-    showToast(e.message, 'error');
-  }
-}
-
-// Relation CRUD handlers
-function showAddRelationModal() {
-  populateRelationSelects();
-  document.getElementById('rel-from').value = '';
-  document.getElementById('rel-to').value = '';
-  document.getElementById('rel-type').value = '';
-  document.getElementById('relation-modal').classList.add('active');
-}
-
-function saveRelation() {
-  const from = document.getElementById('rel-from').value;
-  const to = document.getElementById('rel-to').value;
-  const relationType = document.getElementById('rel-type').value.trim();
-
-  try {
-    editor.addRelation({ from, to, relationType });
-    showToast(`Relation created`, 'success');
-    document.getElementById('relation-modal').classList.remove('active');
-  } catch (e) {
-    showToast(e.message, 'error');
-  }
-}
-
-function deleteRelation(from, to, relationType) {
-  if (!confirm(`Delete relation "${from}" → "${to}"?`)) return;
-
-  try {
-    editor.deleteRelation(from, to, relationType);
-    showToast('Relation deleted', 'success');
-  } catch (e) {
-    showToast(e.message, 'error');
-  }
-}
-
-// Setup event listeners
-function setupEventListeners() {
-  // Tabs
-  document.querySelectorAll('.tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-      document.querySelectorAll('.collapsed-tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      document.getElementById(tab.dataset.tab).classList.add('active');
-      // Sync collapsed tabs
-      document.querySelector(`.collapsed-tab[data-tab="${tab.dataset.tab}"]`)?.classList.add('active');
-    });
-  });
-
-  // Collapsed tabs (when sidebar is collapsed)
-  document.querySelectorAll('.collapsed-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      const sidebar = document.getElementById('sidebar');
-      // Expand sidebar when clicking collapsed tab
-      sidebar.classList.remove('collapsed');
-      document.getElementById('collapse-btn').textContent = '◀';
-      // Switch to that tab
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-      document.querySelectorAll('.collapsed-tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      document.getElementById(tab.dataset.tab).classList.add('active');
-      document.querySelector(`.tab[data-tab="${tab.dataset.tab}"]`)?.classList.add('active');
-    });
-  });
-
-  // Sidebar collapse button
-  document.getElementById('collapse-btn').addEventListener('click', () => {
-    const sidebar = document.getElementById('sidebar');
-    const btn = document.getElementById('collapse-btn');
-    sidebar.classList.toggle('collapsed');
-    btn.textContent = sidebar.classList.contains('collapsed') ? '▶' : '◀';
-    // Refresh graph renderer after transition
-    setTimeout(() => {
-      if (renderer) renderer.refresh();
-    }, 350);
-  });
-
-  // Collapsible panels
+  // Panel toggles
   document.querySelectorAll('.panel-header').forEach(header => {
-    header.addEventListener('click', () => {
-      const panel = header.parentElement;
-      panel.classList.toggle('collapsed');
-    });
+    header.onclick = () => {
+      header.parentElement.classList.toggle('collapsed');
+    };
   });
 
-  // Toolbar buttons
+  // Filter checkboxes - Entity types
+  document.getElementById('type-filters').addEventListener('change', (e) => {
+    if (e.target.type === 'checkbox') {
+      const type = e.target.dataset.type;
+      filters.entityTypes[type] = e.target.checked;
+      applyFilters();
+    }
+  });
+
+  // Filter checkboxes - Relation types
+  document.getElementById('relation-filters').addEventListener('change', (e) => {
+    if (e.target.type === 'checkbox') {
+      const type = e.target.dataset.relation;
+      filters.relationTypes[type] = e.target.checked;
+      applyFilters();
+    }
+  });
+
+  // Graph controls
   document.getElementById('btn-zoom-in').onclick = () => {
     renderer.getCamera().animatedZoom({ duration: 300 });
   };
@@ -733,27 +634,31 @@ function setupEventListeners() {
   };
 
   document.getElementById('btn-reset').onclick = () => {
-    renderer.getCamera().animatedReset({ duration: 500 });
+    renderer.getCamera().animatedReset({ duration: 300 });
+    closeNodeDetail();
   };
 
-  document.getElementById('btn-toggle-obs').onclick = function() {
-    showObservations = !showObservations;
-    this.textContent = showObservations ? '👁 Hide Obs' : '👁 Show Obs';
-    this.classList.toggle('active', showObservations);
-    rebuildGraph();
+  document.getElementById('btn-fullscreen').onclick = () => {
+    const container = document.getElementById('graph-container');
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      container.requestFullscreen();
+    }
   };
 
-  // Toggle edge labels
-  document.getElementById('btn-toggle-labels').onclick = function() {
+  document.getElementById('btn-toggle-labels').onclick = (e) => {
     showEdgeLabels = !showEdgeLabels;
-    this.classList.toggle('active', showEdgeLabels);
     renderer.setSetting('renderEdgeLabels', showEdgeLabels);
-    renderer.refresh();
+    e.target.closest('.control-btn').classList.toggle('active', showEdgeLabels);
   };
 
   // Inference controls
-  document.getElementById('entity-select').onchange = () => {
-    document.getElementById('run-inference').disabled = !document.getElementById('entity-select').value;
+  document.getElementById('entity-select').onchange = function() {
+    document.getElementById('run-inference').disabled = !this.value;
+    if (this.value) {
+      focusOnNode(this.value);
+    }
   };
 
   document.getElementById('max-depth').oninput = function() {
@@ -766,39 +671,30 @@ function setupEventListeners() {
 
   document.getElementById('run-inference').onclick = runInferenceHandler;
 
-  // Search
-  document.getElementById('entity-search').oninput = updateEntityList;
-  document.getElementById('relation-search').oninput = updateRelationList;
+  // Node detail actions
+  document.getElementById('close-detail').onclick = closeNodeDetail;
 
-  // Click on entity list item to focus on graph
-  document.getElementById('entity-list').addEventListener('click', (e) => {
-    // Ignore if clicking on edit/delete buttons
-    if (e.target.closest('.actions')) return;
-
-    const listItem = e.target.closest('.list-item');
-    if (listItem) {
-      const entityName = listItem.dataset.name;
-      if (entityName) {
-        focusOnNode(entityName);
-      }
+  document.getElementById('btn-edit-node').onclick = () => {
+    if (selectedNode) {
+      const entityName = graph.getNodeAttribute(selectedNode, 'fullName');
+      editEntity(entityName);
     }
-  });
+  };
 
-  // Click on relation list item to focus on connected nodes
-  document.getElementById('relation-list').addEventListener('click', (e) => {
-    // Ignore if clicking on delete button
-    if (e.target.closest('.actions')) return;
-
-    const listItem = e.target.closest('.list-item');
-    if (listItem) {
-      const fromEntity = listItem.dataset.from;
-      if (fromEntity) {
-        focusOnNode(fromEntity);
-      }
+  document.getElementById('btn-delete-node').onclick = () => {
+    if (selectedNode) {
+      const entityName = graph.getNodeAttribute(selectedNode, 'fullName');
+      deleteEntity(entityName);
     }
-  });
+  };
 
-  // Modal close
+  // Export
+  document.getElementById('btn-export').onclick = () => {
+    editor.downloadJSONL('memory-export.jsonl');
+    showToast('Data exported', 'success');
+  };
+
+  // Modal close on overlay click
   document.querySelectorAll('.modal-overlay').forEach(overlay => {
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) {
@@ -806,15 +702,141 @@ function setupEventListeners() {
       }
     });
   });
-
-  // Export button
-  document.getElementById('btn-export').onclick = () => {
-    editor.downloadJSONL('memory-export.jsonl');
-    showToast('Data exported to memory-export.jsonl', 'success');
-  };
 }
 
-// Start app when DOM ready
+// Entity CRUD
+function showAddEntityModal() {
+  document.getElementById('entity-modal-title').textContent = '➕ Add Entity';
+  document.getElementById('entity-name').value = '';
+  document.getElementById('entity-type').value = '';
+  document.getElementById('entity-observations').value = '';
+  document.getElementById('entity-name').dataset.editMode = '';
+  document.getElementById('entity-modal').classList.add('active');
+}
+
+function editEntity(entityName) {
+  const entity = editor.entities.find(e => e.name === entityName);
+  if (!entity) return;
+
+  document.getElementById('entity-modal-title').textContent = '✏️ Edit Entity';
+  document.getElementById('entity-name').value = entity.name;
+  document.getElementById('entity-type').value = entity.entityType;
+  document.getElementById('entity-observations').value = (entity.observations || []).join('\n');
+  document.getElementById('entity-name').dataset.editMode = entityName;
+  document.getElementById('entity-modal').classList.add('active');
+}
+
+function saveEntity() {
+  const name = document.getElementById('entity-name').value.trim();
+  const type = document.getElementById('entity-type').value.trim();
+  const obsText = document.getElementById('entity-observations').value.trim();
+  const editMode = document.getElementById('entity-name').dataset.editMode;
+
+  if (!name || !type) {
+    showToast('Name and Type are required', 'error');
+    return;
+  }
+
+  const observations = obsText ? obsText.split('\n').filter(o => o.trim()) : [];
+
+  if (editMode) {
+    editor.updateEntity(editMode, { name, entityType: type, observations });
+    showToast('Entity updated', 'success');
+  } else {
+    editor.addEntity({ name, entityType: type, observations });
+    showToast('Entity created', 'success');
+  }
+
+  document.getElementById('entity-modal').classList.remove('active');
+
+  // Refresh
+  initFilters();
+  rebuildGraph();
+  updateStats();
+  buildLegend();
+  populateEntitySelect();
+  updateSearchSuggestions();
+}
+
+function deleteEntity(entityName) {
+  if (!confirm(`Delete entity "${entityName}"?`)) return;
+
+  editor.deleteEntity(entityName);
+  showToast('Entity deleted', 'success');
+  closeNodeDetail();
+
+  // Refresh
+  initFilters();
+  rebuildGraph();
+  updateStats();
+  buildLegend();
+  populateEntitySelect();
+  updateSearchSuggestions();
+}
+
+// Relation CRUD
+function showAddRelationModal() {
+  const fromSelect = document.getElementById('rel-from');
+  const toSelect = document.getElementById('rel-to');
+
+  fromSelect.innerHTML = '<option value="">Select entity...</option>';
+  toSelect.innerHTML = '<option value="">Select entity...</option>';
+
+  editor.entities.forEach(e => {
+    fromSelect.innerHTML += `<option value="${e.name}">${e.name}</option>`;
+    toSelect.innerHTML += `<option value="${e.name}">${e.name}</option>`;
+  });
+
+  document.getElementById('rel-type').value = '';
+  document.getElementById('relation-modal').classList.add('active');
+}
+
+function saveRelation() {
+  const from = document.getElementById('rel-from').value;
+  const to = document.getElementById('rel-to').value;
+  const type = document.getElementById('rel-type').value.trim();
+
+  if (!from || !to || !type) {
+    showToast('All fields are required', 'error');
+    return;
+  }
+
+  editor.addRelation({ from, to, relationType: type });
+  document.getElementById('relation-modal').classList.remove('active');
+  showToast('Relation created', 'success');
+
+  // Refresh
+  initFilters();
+  rebuildGraph();
+  updateStats();
+}
+
+function deleteRelation(from, to, type) {
+  if (!confirm(`Delete relation "${from}" → "${to}"?`)) return;
+
+  editor.deleteRelation(from, to, type);
+  showToast('Relation deleted', 'success');
+
+  // Refresh
+  initFilters();
+  rebuildGraph();
+  updateStats();
+}
+
+// Toast notification
+function showToast(message, type = 'info') {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.remove();
+  }, 3000);
+}
+
+// Start app
 document.addEventListener('DOMContentLoaded', init);
 
 // Export for onclick handlers
