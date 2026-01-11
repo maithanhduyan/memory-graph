@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Memory Graph - Inference Lab</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/sigma.js/2.4.0/sigma.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/graphology/0.25.4/graphology.umd.min.js"></script>
+</head>
+<body>
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div id="sidebar-header">
+      <h1>
+        <span>🧠</span>
+        <span class="title-text">Memory Graph</span>
+        <span class="badge">LAB</span>
+      </h1>
+      <button id="collapse-btn" title="Toggle Sidebar"> ◀ </button>
+    </div>
+
+    <!-- Collapsed Tabs (visible when sidebar collapsed) -->
+    <div class="collapsed-tabs">
+      <div class="collapsed-tab active" data-tab="tab-inference" title="Inference">🔬</div>
+      <div class="collapsed-tab" data-tab="tab-entities" title="Entities">📦</div>
+      <div class="collapsed-tab" data-tab="tab-relations" title="Relations">🔗</div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <div class="tab active" data-tab="tab-inference">🔬 Inference</div>
+      <div class="tab" data-tab="tab-entities">📦 Entities</div>
+      <div class="tab" data-tab="tab-relations">🔗 Relations</div>
+    </div>
+
+    <!-- Tab: Inference -->
+    <div id="tab-inference" class="tab-content active">
+      <!-- Stats Panel -->
+      <div class="panel" data-panel="stats">
+        <div class="panel-header">
+          <span>📊 Statistics</span>
+          <span class="collapse-icon">▼</span>
+        </div>
+        <div class="panel-content">
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-value" id="stat-entities">-</div>
+              <div class="stat-label">Entities</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="stat-relations">-</div>
+              <div class="stat-label">Relations</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="stat-types">-</div>
+              <div class="stat-label">Types</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="stat-observations">-</div>
+              <div class="stat-label">Observations</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Legend Panel -->
+      <div class="panel" data-panel="legend">
+        <div class="panel-header">
+          <span>🎨 Legend</span>
+          <span class="collapse-icon">▼</span>
+        </div>
+        <div class="panel-content">
+          <div class="legend-grid" id="legend-grid"></div>
+        </div>
+      </div>
+
+      <!-- Inference Lab -->
+      <div class="panel" data-panel="inference">
+        <div class="panel-header">
+          <span>🧪 Inference Lab</span>
+          <span class="collapse-icon">▼</span>
+        </div>
+        <div class="panel-content">
+          <div class="form-group">
+            <label>Select Entity</label>
+            <select id="entity-select">
+              <option value="">Select an entity...</option>
+            </select>
+          </div>
+
+          <div class="slider-group">
+            <label>
+              <span>Max Depth</span>
+              <span id="depth-value">3</span>
+            </label>
+            <input type="range" id="max-depth" min="1" max="5" value="3">
+          </div>
+
+          <div class="slider-group">
+            <label>
+              <span>Min Confidence</span>
+              <span id="confidence-value">0.50</span>
+            </label>
+            <input type="range" id="min-confidence" min="0" max="100" value="50">
+          </div>
+
+          <button class="btn btn-primary btn-full" id="run-inference" disabled>
+            <span>🧪</span>
+            <span>Run Inference</span>
+          </button>
+        </div>
+
+        <!-- Inference Results -->
+        <div id="inference-results">
+          <div class="result-empty">
+            <div class="icon">🔍</div>
+            <div>Select an entity and run inference<br>to discover hidden relations</div>
+          </div>
+        </div>
+      </div>
+
+
+    </div>
+
+    <!-- Tab: Entities -->
+    <div id="tab-entities" class="tab-content">
+      <div class="panel-content">
+        <div class="search-box">
+          <input type="text" id="entity-search" placeholder="Search entities...">
+        </div>
+        <button class="btn btn-success btn-full" onclick="showAddEntityModal()" style="margin-bottom: 12px;">
+          ➕ Add Entity
+        </button>
+        <div class="item-list" id="entity-list"></div>
+      </div>
+    </div>
+
+    <!-- Tab: Relations -->
+    <div id="tab-relations" class="tab-content">
+      <div class="panel-content">
+        <div class="search-box">
+          <input type="text" id="relation-search" placeholder="Search relations...">
+        </div>
+        <button class="btn btn-success btn-full" onclick="showAddRelationModal()" style="margin-bottom: 12px;">
+          ➕ Add Relation
+        </button>
+        <div class="item-list" id="relation-list"></div>
+      </div>
+    </div>
+
+    <div id="sidebar-footer">
+        <p class=""><span>Version: v1.2.0</span></p>
+    </div>
+
+  </div>
+
+  <!-- Graph Container -->
+  <div id="graph-wrapper">
+    <div id="graph-toolbar">
+      <button class="toolbar-btn" id="btn-zoom-in">🔍+</button>
+      <button class="toolbar-btn" id="btn-zoom-out">🔍-</button>
+      <button class="toolbar-btn" id="btn-reset">↺</button>
+      <button class="toolbar-btn" id="btn-toggle-obs">👁 Show Obs</button>
+      <button class="toolbar-btn" id="btn-export">💾 Export</button>
+    </div>
+
+    <div id="mode-badge">
+      ✏️ Edit Mode
+    </div>
+
+    <div id="container"></div>
+  </div>
+
+  <!-- Tooltip -->
+  <div id="tooltip">
+    <h3 id="tooltip-title"></h3>
+    <div id="tooltip-type" class="type"></div>
+    <ul id="tooltip-observations"></ul>
+  </div>
+
+  <!-- Entity Modal -->
+  <div class="modal-overlay" id="entity-modal">
+    <div class="modal">
+      <h2 id="entity-modal-title">➕ Add Entity</h2>
+
+      <div class="form-group">
+        <label>Name *</label>
+        <input type="text" id="entity-name" placeholder="e.g., Feature: Authentication">
+      </div>
+
+      <div class="form-group">
+        <label>Type *</label>
+        <input type="text" id="entity-type" placeholder="e.g., Feature, Bug, Decision" list="entity-types-list">
+        <datalist id="entity-types-list">
+          <option value="Feature">
+          <option value="Bug">
+          <option value="Decision">
+          <option value="Requirement">
+          <option value="Risk">
+          <option value="Milestone">
+          <option value="Module">
+          <option value="Person">
+          <option value="Project">
+          <option value="Convention">
+          <option value="Research">
+        </datalist>
+      </div>
+
+      <div class="form-group">
+        <label>Observations (one per line)</label>
+        <textarea id="entity-observations" placeholder="Status: In Progress&#10;Priority: High&#10;Assigned to: John"></textarea>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="document.getElementById('entity-modal').classList.remove('active')">Cancel</button>
+        <button class="btn btn-primary" onclick="saveEntity()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Relation Modal -->
+  <div class="modal-overlay" id="relation-modal">
+    <div class="modal">
+      <h2>➕ Add Relation</h2>
+
+      <div class="form-group">
+        <label>From Entity *</label>
+        <select id="rel-from">
+          <option value="">Select entity...</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Relation Type *</label>
+        <input type="text" id="rel-type" placeholder="e.g., depends_on, implements" list="relation-types-list">
+        <datalist id="relation-types-list">
+          <option value="depends_on">
+          <option value="implements">
+          <option value="affects">
+          <option value="part_of">
+          <option value="owns">
+          <option value="threatens">
+          <option value="fixes">
+          <option value="caused_by">
+          <option value="includes">
+          <option value="will_implement">
+          <option value="proposes">
+          <option value="related_to">
+        </datalist>
+      </div>
+
+      <div class="form-group">
+        <label>To Entity *</label>
+        <select id="rel-to">
+          <option value="">Select entity...</option>
+        </select>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="document.getElementById('relation-modal').classList.remove('active')">Cancel</button>
+        <button class="btn btn-primary" onclick="saveRelation()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/graph.js"></script>
+  <script src="js/inference.js"></script>
+  <script src="js/editor.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
