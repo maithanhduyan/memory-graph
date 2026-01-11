@@ -39,6 +39,7 @@
 //! }
 //! ```
 
+pub mod event_store;
 pub mod knowledge_base;
 pub mod protocol;
 pub mod search;
@@ -49,14 +50,19 @@ pub mod utils;
 pub mod validation;
 
 // Re-export commonly used items at crate root
+pub use event_store::{
+    ArchiveInfo, EventStore, EventStoreConfig, EventStoreError, EventStoreResult,
+    EventStoreStats, LogRotation, MigrationResult, MigrationTool, ReplayBenchmark,
+    SnapshotManager, StatsCollector,
+};
 pub use knowledge_base::inference::{InferenceEngine, InferenceRule};
 pub use knowledge_base::KnowledgeBase;
 pub use protocol::{McpTool, ServerInfo, Tool};
 pub use server::McpServer;
 pub use types::{
-    Entity, EntityBrief, InferResult, InferStats, InferredRelation, KnowledgeGraph, McpResult,
-    Observation, ObservationDeletion, PathStep, RelatedEntities, RelatedEntity, Relation, Summary,
-    TraversalPath, TraversalResult,
+    Entity, EntityBrief, Event, EventData, EventSource, EventType, InferResult, InferStats,
+    InferredRelation, KnowledgeGraph, McpResult, Observation, ObservationDeletion, PathStep,
+    RelatedEntities, RelatedEntity, Relation, SnapshotMeta, Summary, TraversalPath, TraversalResult,
 };
 
 /// Library version

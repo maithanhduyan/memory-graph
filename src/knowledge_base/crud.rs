@@ -2,7 +2,9 @@
 
 use std::collections::HashSet;
 
-use crate::types::{Entity, McpResult, Observation, ObservationDeletion, Relation};
+use serde_json::json;
+
+use crate::types::{Entity, EventType, McpResult, Observation, ObservationDeletion, Relation};
 use crate::utils::time::current_timestamp;
 
 use super::KnowledgeBase;
@@ -25,12 +27,32 @@ pub fn create_entities(kb: &KnowledgeBase, entities: Vec<Entity>) -> McpResult<V
             }
             entity.created_at = now;
             entity.updated_at = now;
+
+            // Emit event if Event Sourcing is enabled
+            if kb.event_sourcing_enabled {
+                kb.emit_event(
+                    EventType::EntityCreated,
+                    json!({
+                        "name": entity.name,
+                        "entity_type": entity.entity_type,
+                        "observations": entity.observations
+                    }),
+                )?;
+            }
+
             created.push(entity.clone());
             graph.entities.push(entity);
         }
     }
 
-    kb.persist_to_file(&graph)?;
+    // Persist based on mode
+    if !kb.event_sourcing_enabled {
+        kb.persist_to_file(&graph)?;
+    }
+
+    drop(graph);
+    kb.maybe_create_snapshot()?;
+
     Ok(created)
 }
 
@@ -59,13 +81,35 @@ pub fn create_relations(kb: &KnowledgeBase, relations: Vec<Relation>) -> McpResu
                     relation.created_by = kb.current_user.clone();
                 }
                 relation.created_at = now;
+
+                // Emit event if Event Sourcing is enabled
+                if kb.event_sourcing_enabled {
+                    kb.emit_event(
+                        EventType::RelationCreated,
+                        json!({
+                            "from": relation.from,
+                            "to": relation.to,
+                            "relation_type": relation.relation_type,
+                            "valid_from": relation.valid_from,
+                            "valid_to": relation.valid_to
+                        }),
+                    )?;
+                }
+
                 created.push(relation.clone());
                 graph.relations.push(relation);
             }
         }
     }
 
-    kb.persist_to_file(&graph)?;
+    // Persist based on mode
+    if !kb.event_sourcing_enabled {
+        kb.persist_to_file(&graph)?;
+    }
+
+    drop(graph);
+    kb.maybe_create_snapshot()?;
+
     Ok(created)
 }
 
@@ -85,6 +129,17 @@ pub fn add_observations(
 
             for content in &obs.contents {
                 if !existing.contains(content) {
+                    // Emit event if Event Sourcing is enabled
+                    if kb.event_sourcing_enabled {
+                        kb.emit_event(
+                            EventType::ObservationAdded,
+                            json!({
+                                "entity": obs.entity_name,
+                                "observation": content
+                            }),
+                        )?;
+                    }
+
                     entity.observations.push(content.clone());
                     new_contents.push(content.clone());
                 }
@@ -101,14 +156,33 @@ pub fn add_observations(
         }
     }
 
-    kb.persist_to_file(&graph)?;
+    // Persist based on mode
+    if !kb.event_sourcing_enabled {
+        kb.persist_to_file(&graph)?;
+    }
+
+    drop(graph);
+    kb.maybe_create_snapshot()?;
+
     Ok(added)
 }
 
 /// Delete entities (thread-safe: holds write lock during entire operation)
 pub fn delete_entities(kb: &KnowledgeBase, entity_names: Vec<String>) -> McpResult<()> {
     let mut graph = kb.graph.write().unwrap();
-    let names_to_delete: HashSet<String> = entity_names.into_iter().collect();
+    let names_to_delete: HashSet<String> = entity_names.iter().cloned().collect();
+
+    // Emit events for each entity being deleted
+    if kb.event_sourcing_enabled {
+        for name in &entity_names {
+            if graph.entities.iter().any(|e| &e.name == name) {
+                kb.emit_event(
+                    EventType::EntityDeleted,
+                    json!({ "name": name }),
+                )?;
+            }
+        }
+    }
 
     graph
         .entities
@@ -117,7 +191,14 @@ pub fn delete_entities(kb: &KnowledgeBase, entity_names: Vec<String>) -> McpResu
         .relations
         .retain(|r| !names_to_delete.contains(&r.from) && !names_to_delete.contains(&r.to));
 
-    kb.persist_to_file(&graph)?;
+    // Persist based on mode
+    if !kb.event_sourcing_enabled {
+        kb.persist_to_file(&graph)?;
+    }
+
+    drop(graph);
+    kb.maybe_create_snapshot()?;
+
     Ok(())
 }
 
@@ -134,18 +215,61 @@ pub fn delete_observations(
             .iter_mut()
             .find(|e| e.name == deletion.entity_name)
         {
+            // Emit events for each observation being deleted
+            if kb.event_sourcing_enabled {
+                for obs in &deletion.observations {
+                    if entity.observations.contains(obs) {
+                        kb.emit_event(
+                            EventType::ObservationRemoved,
+                            json!({
+                                "entity": deletion.entity_name,
+                                "observation": obs
+                            }),
+                        )?;
+                    }
+                }
+            }
+
             let to_remove: HashSet<String> = deletion.observations.into_iter().collect();
             entity.observations.retain(|o| !to_remove.contains(o));
         }
     }
 
-    kb.persist_to_file(&graph)?;
+    // Persist based on mode
+    if !kb.event_sourcing_enabled {
+        kb.persist_to_file(&graph)?;
+    }
+
+    drop(graph);
+    kb.maybe_create_snapshot()?;
+
     Ok(())
 }
 
 /// Delete relations (thread-safe: holds write lock during entire operation)
 pub fn delete_relations(kb: &KnowledgeBase, relations: Vec<Relation>) -> McpResult<()> {
     let mut graph = kb.graph.write().unwrap();
+
+    // Emit events for each relation being deleted
+    if kb.event_sourcing_enabled {
+        for relation in &relations {
+            let exists = graph.relations.iter().any(|r| {
+                r.from == relation.from
+                    && r.to == relation.to
+                    && r.relation_type == relation.relation_type
+            });
+            if exists {
+                kb.emit_event(
+                    EventType::RelationDeleted,
+                    json!({
+                        "from": relation.from,
+                        "to": relation.to,
+                        "relation_type": relation.relation_type
+                    }),
+                )?;
+            }
+        }
+    }
 
     let to_delete: HashSet<String> = relations
         .iter()
@@ -157,6 +281,13 @@ pub fn delete_relations(kb: &KnowledgeBase, relations: Vec<Relation>) -> McpResu
         !to_delete.contains(&key)
     });
 
-    kb.persist_to_file(&graph)?;
+    // Persist based on mode
+    if !kb.event_sourcing_enabled {
+        kb.persist_to_file(&graph)?;
+    }
+
+    drop(graph);
+    kb.maybe_create_snapshot()?;
+
     Ok(())
 }
