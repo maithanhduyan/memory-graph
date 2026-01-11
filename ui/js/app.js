@@ -42,6 +42,11 @@ async function init() {
     document.getElementById('graph-subtitle').textContent =
       `${editor.entities.length} entities, ${editor.relations.length} relations`;
 
+    // Initialize WebSocket for real-time updates
+    if (typeof initWebSocket === 'function') {
+      initWebSocket();
+    }
+
     console.log('Memory Graph initialized');
   } catch (error) {
     console.error('Failed to initialize:', error);

@@ -4,6 +4,7 @@ use std::collections::HashSet;
 
 use serde_json::json;
 
+use crate::api::websocket::ws_helpers;
 use crate::types::{Entity, EventType, McpResult, Observation, ObservationDeletion, Relation};
 use crate::utils::time::current_timestamp;
 
@@ -39,6 +40,9 @@ pub fn create_entities(kb: &KnowledgeBase, entities: Vec<Entity>) -> McpResult<V
                     }),
                 )?;
             }
+
+            // Broadcast to WebSocket clients
+            ws_helpers::entity_created(&entity, Some(kb.current_user.clone()));
 
             created.push(entity.clone());
             graph.entities.push(entity);
@@ -96,6 +100,9 @@ pub fn create_relations(kb: &KnowledgeBase, relations: Vec<Relation>) -> McpResu
                     )?;
                 }
 
+                // Broadcast to WebSocket clients
+                ws_helpers::relation_created(&relation, Some(kb.current_user.clone()));
+
                 created.push(relation.clone());
                 graph.relations.push(relation);
             }
@@ -148,6 +155,14 @@ pub fn add_observations(
             if !new_contents.is_empty() {
                 entity.updated_at = now;
                 entity.updated_by = kb.current_user.clone();
+
+                // Broadcast to WebSocket clients
+                ws_helpers::entity_updated(
+                    &obs.entity_name,
+                    new_contents.clone(),
+                    Some(kb.current_user.clone()),
+                );
+
                 added.push(Observation {
                     entity_name: obs.entity_name.clone(),
                     contents: new_contents,
@@ -172,15 +187,17 @@ pub fn delete_entities(kb: &KnowledgeBase, entity_names: Vec<String>) -> McpResu
     let mut graph = kb.graph.write().unwrap();
     let names_to_delete: HashSet<String> = entity_names.iter().cloned().collect();
 
-    // Emit events for each entity being deleted
-    if kb.event_sourcing_enabled {
-        for name in &entity_names {
-            if graph.entities.iter().any(|e| &e.name == name) {
+    // Emit events and broadcast for each entity being deleted
+    for name in &entity_names {
+        if graph.entities.iter().any(|e| &e.name == name) {
+            if kb.event_sourcing_enabled {
                 kb.emit_event(
                     EventType::EntityDeleted,
                     json!({ "name": name }),
                 )?;
             }
+            // Broadcast to WebSocket clients
+            ws_helpers::entity_deleted(name, Some(kb.current_user.clone()));
         }
     }
 
@@ -250,15 +267,15 @@ pub fn delete_observations(
 pub fn delete_relations(kb: &KnowledgeBase, relations: Vec<Relation>) -> McpResult<()> {
     let mut graph = kb.graph.write().unwrap();
 
-    // Emit events for each relation being deleted
-    if kb.event_sourcing_enabled {
-        for relation in &relations {
-            let exists = graph.relations.iter().any(|r| {
-                r.from == relation.from
-                    && r.to == relation.to
-                    && r.relation_type == relation.relation_type
-            });
-            if exists {
+    // Emit events and broadcast for each relation being deleted
+    for relation in &relations {
+        let exists = graph.relations.iter().any(|r| {
+            r.from == relation.from
+                && r.to == relation.to
+                && r.relation_type == relation.relation_type
+        });
+        if exists {
+            if kb.event_sourcing_enabled {
                 kb.emit_event(
                     EventType::RelationDeleted,
                     json!({
@@ -268,6 +285,13 @@ pub fn delete_relations(kb: &KnowledgeBase, relations: Vec<Relation>) -> McpResu
                     }),
                 )?;
             }
+            // Broadcast to WebSocket clients
+            ws_helpers::relation_deleted(
+                &relation.from,
+                &relation.to,
+                &relation.relation_type,
+                Some(kb.current_user.clone()),
+            );
         }
     }
 

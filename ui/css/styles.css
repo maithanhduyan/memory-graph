@@ -134,6 +134,28 @@ html, body {
   font-size: 24px;
 }
 
+/* WebSocket Status Indicator */
+.ws-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-left: 4px;
+  transition: background-color 0.3s ease;
+}
+
+.ws-status.connected {
+  background-color: var(--accent-success);
+  box-shadow: 0 0 6px var(--accent-success);
+}
+
+.ws-status.disconnected {
+  background-color: var(--text-muted);
+}
+
+.sidebar.collapsed .ws-status {
+  display: none;
+}
+
 .sidebar.collapsed .logo-text {
   display: none;
 }

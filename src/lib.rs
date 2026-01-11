@@ -39,6 +39,7 @@
 //! }
 //! ```
 
+pub mod api;
 pub mod event_store;
 pub mod knowledge_base;
 pub mod protocol;
@@ -50,6 +51,8 @@ pub mod utils;
 pub mod validation;
 
 // Re-export commonly used items at crate root
+pub use api::websocket::{state::AppState, events::GraphEvent};
+pub use api::http::create_router;
 pub use event_store::{
     ArchiveInfo, EventStore, EventStoreConfig, EventStoreError, EventStoreResult,
     EventStoreStats, LogRotation, MigrationResult, MigrationTool, ReplayBenchmark,
