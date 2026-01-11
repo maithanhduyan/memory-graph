@@ -285,12 +285,16 @@ function focusOnNode(entityName) {
   if (graph.hasNode(nodeId)) {
     const attrs = graph.getNodeAttributes(nodeId);
 
+    // Get current camera ratio, don't zoom in too much
+    const currentRatio = renderer.getCamera().getState().ratio;
+    const targetRatio = Math.min(currentRatio, 1.5); // Zoom in but not too close
+
     // Animate camera to node
     renderer.getCamera().animate({
       x: attrs.x,
       y: attrs.y,
-      ratio: 0.3
-    }, { duration: 500 });
+      ratio: targetRatio
+    }, { duration: 400 });
 
     // Select the node after animation
     setTimeout(() => {
@@ -765,6 +769,34 @@ function setupEventListeners() {
   // Search
   document.getElementById('entity-search').oninput = updateEntityList;
   document.getElementById('relation-search').oninput = updateRelationList;
+
+  // Click on entity list item to focus on graph
+  document.getElementById('entity-list').addEventListener('click', (e) => {
+    // Ignore if clicking on edit/delete buttons
+    if (e.target.closest('.actions')) return;
+
+    const listItem = e.target.closest('.list-item');
+    if (listItem) {
+      const entityName = listItem.dataset.name;
+      if (entityName) {
+        focusOnNode(entityName);
+      }
+    }
+  });
+
+  // Click on relation list item to focus on connected nodes
+  document.getElementById('relation-list').addEventListener('click', (e) => {
+    // Ignore if clicking on delete button
+    if (e.target.closest('.actions')) return;
+
+    const listItem = e.target.closest('.list-item');
+    if (listItem) {
+      const fromEntity = listItem.dataset.from;
+      if (fromEntity) {
+        focusOnNode(fromEntity);
+      }
+    }
+  });
 
   // Modal close
   document.querySelectorAll('.modal-overlay').forEach(overlay => {
