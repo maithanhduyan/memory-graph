@@ -4,6 +4,7 @@
 
 mod entity;
 mod graph;
+mod inference;
 mod observation;
 mod relation;
 mod summary;
@@ -11,6 +12,7 @@ mod traversal;
 
 pub use entity::{Entity, EntityBrief};
 pub use graph::KnowledgeGraph;
+pub use inference::{InferResult, InferStats, InferredRelation};
 pub use observation::{Observation, ObservationDeletion};
 pub use relation::{RelatedEntities, RelatedEntity, Relation};
 pub use summary::Summary;

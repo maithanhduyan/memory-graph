@@ -4,6 +4,7 @@
 //! thread-safe CRUD operations, queries, and temporal features.
 
 mod crud;
+pub mod inference;
 mod query;
 mod summarize;
 mod temporal;

@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-01-11
+
+### 🧠 Inference Engine Release
+
+First reasoning capability - transform from "storage" to "intelligence".
+
+### Added
+
+#### Inference Engine (`src/knowledge_base/inference/`)
+- **InferenceRule trait** - Pluggable rule system for graph reasoning
+- **InferenceEngine** - Runtime engine that applies rules to discover hidden relations
+- **TransitiveDependencyRule** - First rule implementation with:
+  - BFS traversal for shortest-path-first (Occam's Razor)
+  - Cycle detection via HashSet (prevents infinite loops)
+  - Configurable max depth (default: 3, max: 5)
+  - Confidence decay per relation type:
+    - `depends_on`, `contains`, `part_of`: 0.95
+    - `implements`, `fixes`, `caused_by`: 0.90
+    - `affects`, `assigned_to`, `blocked_by`: 0.85
+    - `relates_to`, `supersedes`, `requires`: 0.70
+    - Unknown types: 0.60
+
+#### New MCP Tool: `infer`
+- **16th tool** - Discover hidden transitive relations
+- **Parameters:**
+  - `entityName` (required): Target entity to infer relations for
+  - `minConfidence` (optional): Threshold 0.0-1.0, default 0.5
+  - `maxDepth` (optional): Traversal depth 1-5, default 3
+- **Returns:** `InferResult` with inferred relations, confidence scores, and stats
+
+#### New Types (`src/types/inference.rs`)
+- `InferredRelation` - Relation with confidence, rule name, and explanation
+- `InferStats` - Performance metrics (nodes visited, paths found, execution time)
+- `InferResult` - Combined result for API response
+
+### Changed
+- Updated from 15 to **16 MCP tools**
+- Updated lib.rs documentation and exports
+- Tools module now includes `inference/` category
+
+### Technical Details
+- **31 tests total:** 22 unit + 8 integration + 1 doc
+- **New inference tests:** 10 tests covering chain inference, cycles, depth limits, confidence thresholds
+- **Runtime only:** Inferred relations are NOT persisted (Option A design)
+- **Documentation:** See `docs/Proposed-Graph-Inference.md` for full specification
+
+---
+
 ## [1.1.0] - 2026-01-11
 
 ### 🏗️ Major Refactoring Release
