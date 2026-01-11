@@ -14,8 +14,11 @@ RUN apk add --no-cache musl-dev
 
 WORKDIR /app
 
-# Copy all source files
-COPY Cargo.toml Cargo.lock* memory.rs ./
+# Copy Cargo files first (for better layer caching)
+COPY Cargo.toml Cargo.lock* ./
+
+# Copy source directory with full structure
+COPY src/ ./src/
 
 # Build for release
 RUN cargo build --release
