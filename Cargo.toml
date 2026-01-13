@@ -28,6 +28,7 @@ tokio = { version = "1", features = ["full"] }
 axum = { version = "0.7", features = ["ws"] }
 tower-http = { version = "0.5", features = ["cors"] }
 chrono = "0.4"
+urlencoding = "2.1"  # URL decode for path parameters
 
 [dev-dependencies]
 tempfile = "3"
