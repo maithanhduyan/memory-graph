@@ -14,6 +14,7 @@ pub mod temporal;
 use std::sync::Arc;
 
 use crate::knowledge_base::KnowledgeBase;
+use crate::protocol::Tool;
 use crate::server::McpServer;
 
 // Re-export all tools for convenience
@@ -50,4 +51,30 @@ pub fn register_all_tools(server: &mut McpServer, kb: Arc<KnowledgeBase>) {
 
     // Inference tools (1)
     server.register_tool(Box::new(InferTool::new(kb.clone())));
+}
+
+/// Get all tools as Arc<dyn Tool> for SSE state
+pub fn get_all_tools(kb: Arc<KnowledgeBase>) -> Vec<Arc<dyn Tool>> {
+    vec![
+        // Memory tools (9)
+        Arc::new(CreateEntitiesTool::new(kb.clone())) as Arc<dyn Tool>,
+        Arc::new(CreateRelationsTool::new(kb.clone())),
+        Arc::new(AddObservationsTool::new(kb.clone())),
+        Arc::new(DeleteEntitiesTool::new(kb.clone())),
+        Arc::new(DeleteObservationsTool::new(kb.clone())),
+        Arc::new(DeleteRelationsTool::new(kb.clone())),
+        Arc::new(ReadGraphTool::new(kb.clone())),
+        Arc::new(SearchNodesTool::new(kb.clone())),
+        Arc::new(OpenNodesTool::new(kb.clone())),
+        // Query tools (3)
+        Arc::new(GetRelatedTool::new(kb.clone())),
+        Arc::new(TraverseTool::new(kb.clone())),
+        Arc::new(SummarizeTool::new(kb.clone())),
+        // Temporal tools (3)
+        Arc::new(GetRelationsAtTimeTool::new(kb.clone())),
+        Arc::new(GetRelationHistoryTool::new(kb.clone())),
+        Arc::new(GetCurrentTimeTool::new()),
+        // Inference tools (1)
+        Arc::new(InferTool::new(kb.clone())),
+    ]
 }

@@ -180,21 +180,26 @@ fn run_both_modes() -> McpResult<()> {
 async fn run_http_server() -> McpResult<()> {
     use tokio::sync::RwLock;
 
-    let kb = Arc::new(RwLock::new(KnowledgeBase::new()));
+    // Create sync KB for MCP tools (SSE transport)
+    let kb_sync = Arc::new(KnowledgeBase::new());
+
+    // Create async KB wrapper for WebSocket/REST
+    let kb_async = Arc::new(RwLock::new(KnowledgeBase::new()));
 
     // Initialize global broadcaster for WebSocket events
     init_broadcaster(1024);
 
     // Create AppState for WebSocket
-    let state = Arc::new(AppState::new(kb));
+    let state = Arc::new(AppState::new(kb_async));
 
-    // Create router
-    let app = create_router(state);
+    // Create router with both KBs
+    let app = create_router(state, kb_sync);
 
     // Bind to port 3030
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 3030));
     eprintln!("[HTTP Server] Listening on http://{}", addr);
     eprintln!("[HTTP Server] WebSocket endpoint: ws://{}/ws", addr);
+    eprintln!("[HTTP Server] MCP SSE endpoint: http://{}/mcp/sse", addr);
     eprintln!("[HTTP Server] Health check: http://{}/health", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await
