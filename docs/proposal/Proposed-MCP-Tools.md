@@ -1,6 +1,6 @@
 # Proposed MCP Tools
 
-> **Status**: Proposed
+> **Status**: 📋 Proposed | ✅ Approved| ✔️ Completed
 > **Created**: 2026-01-11
 > **Author**: tiach
 

@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Memory Graph - Knowledge Visualization</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/sigma.js/2.4.0/sigma.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/graphology/0.25.4/graphology.umd.min.js"></script>
+</head>
+<body>
+  <div id="app-root">
+    <!-- Left Sidebar - Filters & Controls -->
+    <aside id="sidebar-left" class="sidebar">
+      <div class="sidebar-header">
+        <h1 class="logo">
+          <span class="logo-icon">🧠</span>
+          <span class="logo-text">Memory Graph</span>
+          <span id="ws-status" class="ws-status disconnected" title="WebSocket status"></span>
+        </h1>
+        <button class="sidebar-toggle" id="toggle-left" title="Toggle sidebar">◀</button>
+      </div>
+
+      <div class="sidebar-content">
+        <!-- Search -->
+        <div class="search-wrapper">
+          <input type="search" id="graph-search" placeholder="Search nodes..." autocomplete="off">
+          <span class="search-icon">🔍</span>
+          <div id="search-results" class="search-results"></div>
+        </div>
+
+        <!-- Entity Types Filter -->
+        <section class="panel" data-panel="types">
+          <div class="panel-header">
+            <span>📦 Entity Types</span>
+            <span class="panel-toggle">▼</span>
+          </div>
+          <div class="panel-body">
+            <div id="type-filters" class="filter-list"></div>
+          </div>
+        </section>
+
+        <!-- Relation Types Filter -->
+        <section class="panel" data-panel="relations">
+          <div class="panel-header">
+            <span>🔗 Relation Types</span>
+            <span class="panel-toggle">▼</span>
+          </div>
+          <div class="panel-body">
+            <div id="relation-filters" class="filter-list"></div>
+          </div>
+        </section>
+
+        <!-- Inference Lab -->
+        <section class="panel" data-panel="inference">
+          <div class="panel-header">
+            <span>🧪 Inference Lab</span>
+            <span class="panel-toggle">▼</span>
+          </div>
+          <div class="panel-body">
+            <div class="form-group">
+              <label>Start Entity</label>
+              <select id="entity-select">
+                <option value="">Click a node or select...</option>
+              </select>
+            </div>
+
+            <div class="slider-group">
+              <label>
+                <span>Max Depth</span>
+                <span id="depth-value">3</span>
+              </label>
+              <input type="range" id="max-depth" min="1" max="5" value="3">
+            </div>
+
+            <div class="slider-group">
+              <label>
+                <span>Min Confidence</span>
+                <span id="confidence-value">0.50</span>
+              </label>
+              <input type="range" id="min-confidence" min="0" max="100" value="50">
+            </div>
+
+            <button class="btn btn-primary btn-full" id="run-inference" disabled>
+              🧪 Run Inference
+            </button>
+
+            <div id="inference-results" class="inference-results">
+              <div class="result-empty">
+                <div class="icon">🔍</div>
+                <p>Select an entity to discover hidden relations</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Data Management -->
+        <section class="panel" data-panel="data">
+          <div class="panel-header">
+            <span>📊 Data</span>
+            <span class="panel-toggle">▼</span>
+          </div>
+          <div class="panel-body">
+            <div class="stats-row">
+              <div class="stat">
+                <span class="stat-value" id="stat-entities">0</span>
+                <span class="stat-label">Entities</span>
+              </div>
+              <div class="stat">
+                <span class="stat-value" id="stat-relations">0</span>
+                <span class="stat-label">Relations</span>
+              </div>
+            </div>
+            <div class="btn-group">
+              <button class="btn btn-secondary btn-sm" onclick="showAddEntityModal()">➕ Entity</button>
+              <button class="btn btn-secondary btn-sm" onclick="showAddRelationModal()">➕ Relation</button>
+              <button class="btn btn-secondary btn-sm" id="btn-export">💾 Export</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Event Sourcing Stats -->
+        <section class="panel" data-panel="event-sourcing">
+          <div class="panel-header">
+            <span>⚡ Event Sourcing</span>
+            <span class="panel-toggle">▼</span>
+          </div>
+          <div class="panel-body">
+            <div class="es-stats-grid">
+              <div class="es-stat">
+                <span class="es-stat-icon">📝</span>
+                <div class="es-stat-content">
+                  <span class="es-stat-value" id="es-total-events">-</span>
+                  <span class="es-stat-label">Total Events</span>
+                </div>
+              </div>
+              <div class="es-stat">
+                <span class="es-stat-icon">📸</span>
+                <div class="es-stat-content">
+                  <span class="es-stat-value" id="es-last-snapshot">-</span>
+                  <span class="es-stat-label">Last Snapshot</span>
+                </div>
+              </div>
+              <div class="es-stat">
+                <span class="es-stat-icon">📦</span>
+                <div class="es-stat-content">
+                  <span class="es-stat-value" id="es-archive-count">-</span>
+                  <span class="es-stat-label">Archives</span>
+                </div>
+              </div>
+              <div class="es-stat">
+                <span class="es-stat-icon">💾</span>
+                <div class="es-stat-content">
+                  <span class="es-stat-value" id="es-total-size">-</span>
+                  <span class="es-stat-label">Total Size</span>
+                </div>
+              </div>
+            </div>
+            <div class="es-events-breakdown" id="es-events-breakdown">
+              <div class="es-breakdown-title">Events by Type</div>
+              <div class="es-breakdown-items" id="es-breakdown-items">
+                <span class="es-breakdown-empty">No data available</span>
+              </div>
+            </div>
+            <div class="es-status" id="es-status">
+              <span class="es-status-dot"></span>
+              <span class="es-status-text">Checking status...</span>
+            </div>
+            <button class="btn btn-secondary btn-sm btn-full" id="btn-refresh-es-stats">🔄 Refresh Stats</button>
+          </div>
+        </section>
+      </div>
+
+      <div class="sidebar-footer">
+        <span>v1.2.0</span>
+      </div>
+    </aside>
+
+    <!-- Graph Container -->
+    <main id="graph-container">
+      <!-- Controls overlay -->
+      <div id="graph-controls">
+        <div class="control-group">
+          <button class="control-btn" id="btn-zoom-in" title="Zoom in">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35M11 8v6M8 11h6"/>
+            </svg>
+          </button>
+          <button class="control-btn" id="btn-zoom-out" title="Zoom out">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35M8 11h6"/>
+            </svg>
+          </button>
+          <button class="control-btn" id="btn-reset" title="Reset view">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="10"/>
+            </svg>
+          </button>
+          <button class="control-btn" id="btn-fullscreen" title="Fullscreen">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+            </svg>
+          </button>
+        </div>
+        <div class="control-group">
+          <button class="control-btn" id="btn-toggle-labels" title="Toggle edge labels">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 7V4h16v3M9 20h6M12 4v16"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Sigma canvas container -->
+      <div id="sigma-container"></div>
+
+      <!-- Graph title overlay -->
+      <div id="graph-title">
+        <h2>Knowledge Graph</h2>
+        <p id="graph-subtitle">Loading...</p>
+      </div>
+    </main>
+
+    <!-- Right Sidebar - Details -->
+    <aside id="sidebar-right" class="sidebar">
+      <button class="sidebar-toggle" id="toggle-right" title="Toggle details">▶</button>
+
+      <div class="sidebar-content">
+        <!-- Node Details -->
+        <div id="node-details" class="detail-panel">
+          <div class="detail-header">
+            <span class="detail-dot" id="detail-dot"></span>
+            <div class="detail-info">
+              <h3 id="detail-title">No Selection</h3>
+              <span class="detail-type" id="detail-type">Click a node to view details</span>
+            </div>
+            <button class="detail-close" id="close-detail">✕</button>
+          </div>
+
+          <div class="detail-body" id="detail-body">
+            <section class="detail-section">
+              <h4>📝 Observations</h4>
+              <ul id="detail-observations" class="observation-list">
+                <li class="empty">No observations</li>
+              </ul>
+            </section>
+
+            <section class="detail-section">
+              <h4>🔗 Connections</h4>
+              <div id="detail-connections" class="connection-list">
+                <p class="empty">No connections</p>
+              </div>
+            </section>
+
+            <section class="detail-section">
+              <h4>⚙️ Actions</h4>
+              <div class="action-buttons">
+                <button class="btn btn-sm" id="btn-edit-node">✏️ Edit</button>
+                <button class="btn btn-sm btn-danger" id="btn-delete-node">🗑️ Delete</button>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <!-- Legend -->
+        <section class="panel" data-panel="legend">
+          <div class="panel-header">
+            <span>🎨 Legend</span>
+            <span class="panel-toggle">▼</span>
+          </div>
+          <div class="panel-body">
+            <div id="legend-grid" class="legend-grid"></div>
+          </div>
+        </section>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Tooltip (hover) -->
+  <div id="tooltip" class="tooltip">
+    <h3 id="tooltip-title"></h3>
+    <div id="tooltip-type" class="tooltip-type"></div>
+    <ul id="tooltip-observations"></ul>
+  </div>
+
+  <!-- Entity Modal -->
+  <div class="modal-overlay" id="entity-modal">
+    <div class="modal">
+      <h2 id="entity-modal-title">➕ Add Entity</h2>
+
+      <div class="form-group">
+        <label>Name *</label>
+        <input type="text" id="entity-name" placeholder="e.g., Feature: Authentication">
+      </div>
+
+      <div class="form-group">
+        <label>Type *</label>
+        <input type="text" id="entity-type" placeholder="e.g., Feature, Bug, Decision" list="entity-types-list">
+        <datalist id="entity-types-list">
+          <option value="Feature">
+          <option value="Bug">
+          <option value="Decision">
+          <option value="Requirement">
+          <option value="Risk">
+          <option value="Milestone">
+          <option value="Module">
+          <option value="Person">
+          <option value="Project">
+          <option value="Convention">
+          <option value="Research">
+        </datalist>
+      </div>
+
+      <div class="form-group">
+        <label>Observations (one per line)</label>
+        <textarea id="entity-observations" placeholder="Status: In Progress&#10;Priority: High&#10;Assigned to: John"></textarea>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="document.getElementById('entity-modal').classList.remove('active')">Cancel</button>
+        <button class="btn btn-primary" onclick="saveEntity()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Relation Modal -->
+  <div class="modal-overlay" id="relation-modal">
+    <div class="modal">
+      <h2>➕ Add Relation</h2>
+
+      <div class="form-group">
+        <label>From Entity *</label>
+        <select id="rel-from">
+          <option value="">Select entity...</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Relation Type *</label>
+        <input type="text" id="rel-type" placeholder="e.g., depends_on, implements" list="relation-types-list">
+        <datalist id="relation-types-list">
+          <option value="depends_on">
+          <option value="implements">
+          <option value="affects">
+          <option value="part_of">
+          <option value="owns">
+          <option value="threatens">
+          <option value="fixes">
+          <option value="caused_by">
+          <option value="includes">
+          <option value="will_implement">
+          <option value="proposes">
+          <option value="related_to">
+        </datalist>
+      </div>
+
+      <div class="form-group">
+        <label>To Entity *</label>
+        <select id="rel-to">
+          <option value="">Select entity...</option>
+        </select>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="document.getElementById('relation-modal').classList.remove('active')">Cancel</button>
+        <button class="btn btn-primary" onclick="saveRelation()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast-container"></div>
+
+  <!-- Scripts -->
+  <script src="js/graph.js"></script>
+  <script src="js/inference.js"></script>
+  <script src="js/editor.js"></script>
+  <script src="js/websocket.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
