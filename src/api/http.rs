@@ -7,6 +7,7 @@ use axum::{
 };
 use tower_http::cors::{Any, CorsLayer};
 
+use super::rest::{entities, graph, relations, search};
 use super::websocket::{handler::ws_handler, state::AppState};
 
 /// Create the Axum router with all endpoints
@@ -22,12 +23,13 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/ws", get(ws_handler))
         // Health check
         .route("/health", get(health_check))
-        // TODO: REST API endpoints
-        // .route("/api/entities", get(list_entities).post(create_entities))
-        // .route("/api/entities/:name", get(get_entity).delete(delete_entity))
-        // .route("/api/relations", get(list_relations).post(create_relations))
-        // .route("/api/graph", get(get_graph))
-        // .route("/api/search", get(search_nodes))
+        // REST API endpoints
+        .route("/api/graph", get(graph::get_graph))
+        .route("/api/graph/stats", get(graph::get_stats))
+        .route("/api/entities", get(entities::list_entities))
+        .route("/api/entities/:name", get(entities::get_entity))
+        .route("/api/relations", get(relations::list_relations))
+        .route("/api/search", get(search::search_nodes))
         .layer(cors)
         .with_state(state)
 }
