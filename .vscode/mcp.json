@@ -1,11 +1,18 @@
 {
     "servers": {
+        // "memory": {
+        //     "type": "stdio",
+        //     "command": "${workspaceFolder}/target/release/memory-server.exe",
+        //     "args": ["--mode","both"],
+        //     "env": {
+        //         "MEMORY_FILE_PATH": "${workspaceFolder}/memory.jsonl"
+        //     }
+        // },
         "memory": {
-            "type": "stdio",
-            "command": "${workspaceFolder}/target/release/memory-server.exe",
-            "args": ["--mode","both"],
-            "env": {
-                "MEMORY_FILE_PATH": "${workspaceFolder}/memory.jsonl"
+            "type": "sse",
+            "url": "http://localhost:3030/mcp/sse",
+            "headers": {
+                "X-API-KEY": "super-secret-key-for-jwt-at-least-32-chars-long"
             }
         },
 
