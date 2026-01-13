@@ -19,6 +19,11 @@
 //! - `GET /mcp/sse` - SSE stream for AI Agents
 //! - `POST /mcp` - JSON-RPC requests
 //! - `GET /mcp/info` - Server info and capabilities
+//!
+//! ### Authentication
+//! - `POST /auth/token` - Login and get JWT tokens
+//! - `POST /auth/refresh` - Refresh access token
+//! - `GET /auth/me` - Get current user info
 
 pub mod http;
 pub mod rest;

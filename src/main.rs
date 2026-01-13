@@ -15,13 +15,28 @@
 //! # Both stdio and HTTP modes
 //! memory-server --mode both
 //! ```
+//!
+//! ## JWT Authentication (for HTTP/SSE mode)
+//!
+//! ```bash
+//! # Set environment variables
+//! MEMORY_JWT_SECRET=your-super-secret-key-at-least-32-characters
+//! MEMORY_USERS=alice:password123,bob:secret456,admin:adminpass:*
+//! MEMORY_REQUIRE_AUTH=true  # Optional: require auth for all requests
+//!
+//! # Login to get token
+//! curl -X POST http://localhost:3030/auth/token \
+//!   -H "Content-Type: application/json" \
+//!   -d '{"username":"alice","password":"password123"}'
+//! ```
 
 use std::env;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use memory_graph::api::websocket::{init_broadcaster, state::AppState};
-use memory_graph::api::http::create_router;
+use memory_graph::api::http::create_router_with_auth;
+use memory_graph::api::sse::JwtAuth;
 use memory_graph::knowledge_base::KnowledgeBase;
 use memory_graph::protocol::ServerInfo;
 use memory_graph::server::McpServer;
@@ -192,14 +207,30 @@ async fn run_http_server() -> McpResult<()> {
     // Create AppState for WebSocket
     let state = Arc::new(AppState::new(kb_async));
 
-    // Create router with both KBs
-    let app = create_router(state, kb_sync);
+    // Initialize JWT authentication if configured
+    let (jwt_auth, require_auth) = match JwtAuth::from_env() {
+        Ok(auth) => {
+            let require = env::var("MEMORY_REQUIRE_AUTH")
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false);
+            eprintln!("[Auth] JWT authentication enabled (require_auth: {})", require);
+            (Some(Arc::new(auth)), require)
+        }
+        Err(e) => {
+            eprintln!("[Auth] JWT not configured: {} - running without authentication", e);
+            (None, false)
+        }
+    };
+
+    // Create router with JWT auth
+    let app = create_router_with_auth(state, kb_sync, jwt_auth, require_auth);
 
     // Bind to port 3030
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 3030));
     eprintln!("[HTTP Server] Listening on http://{}", addr);
     eprintln!("[HTTP Server] WebSocket endpoint: ws://{}/ws", addr);
     eprintln!("[HTTP Server] MCP SSE endpoint: http://{}/mcp/sse", addr);
+    eprintln!("[HTTP Server] Auth endpoints: POST /auth/token, POST /auth/refresh, GET /auth/me");
     eprintln!("[HTTP Server] Health check: http://{}/health", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await

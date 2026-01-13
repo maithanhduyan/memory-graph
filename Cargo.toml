@@ -33,6 +33,10 @@ futures = "0.3"       # Stream utilities
 async-stream = "0.3" # Async stream macros for SSE
 tokio-stream = "0.1" # Tokio stream extensions
 
+# JWT Authentication
+jsonwebtoken = "9"   # JWT encode/decode
+bcrypt = "0.15"      # Password hashing
+
 [dev-dependencies]
 tempfile = "3"
 tower = "0.5"  # For ServiceExt trait in tests

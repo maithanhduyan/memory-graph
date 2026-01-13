@@ -7,9 +7,14 @@
 //! - `GET /mcp/sse` - SSE stream for server→client events
 //! - `POST /mcp` - JSON-RPC requests from client→server
 //! - `GET /mcp/info` - Server info and capabilities
+//! - `POST /auth/token` - Login and get JWT tokens
+//! - `POST /auth/refresh` - Refresh access token
 
+pub mod auth;
 pub mod handler;
 pub mod session;
+
+pub use auth::{AuthError, Claims, JwtAuth, SharedJwtAuth, TokenPair};
 
 use serde::Serialize;
 

@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::broadcast;
 
+use super::auth::{AuthError, Claims, JwtAuth};
 use super::{session::SessionManager, SseEvent};
 use crate::api::websocket::events::WsMessage;
 use crate::protocol::{JsonRpcError, JsonRpcRequest, JsonRpcResponse, McpTool, Tool};
@@ -37,6 +38,10 @@ pub struct SseState {
     pub event_rx: broadcast::Sender<WsMessage>,
     /// Sequence counter
     pub sequence_counter: Arc<std::sync::atomic::AtomicU64>,
+    /// JWT authentication (optional - None means auth disabled)
+    pub jwt_auth: Option<Arc<JwtAuth>>,
+    /// Whether authentication is required
+    pub require_auth: bool,
 }
 
 impl SseState {
@@ -61,7 +66,16 @@ impl SseState {
             server_version: env!("CARGO_PKG_VERSION").to_string(),
             event_rx: event_tx,
             sequence_counter,
+            jwt_auth: None,
+            require_auth: false,
         }
+    }
+
+    /// Set JWT authentication
+    pub fn with_jwt_auth(mut self, jwt_auth: Arc<JwtAuth>, require_auth: bool) -> Self {
+        self.jwt_auth = Some(jwt_auth);
+        self.require_auth = require_auth;
+        self
     }
 
     /// Register a tool
@@ -73,6 +87,37 @@ impl SseState {
     /// Get current sequence ID
     pub fn current_sequence_id(&self) -> u64 {
         self.sequence_counter.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Validate token from headers
+    pub fn validate_auth(&self, headers: &HeaderMap) -> Result<Option<Claims>, AuthError> {
+        let jwt_auth = match &self.jwt_auth {
+            Some(auth) => auth,
+            None => return Ok(None), // Auth disabled
+        };
+
+        // Try Authorization header first
+        if let Some(auth_header) = headers.get("Authorization") {
+            if let Ok(header_str) = auth_header.to_str() {
+                return jwt_auth.validate_authorization(header_str).map(Some);
+            }
+        }
+
+        // Try X-API-Key header (for backward compatibility)
+        if let Some(api_key_header) = headers.get("X-API-Key") {
+            if let Ok(key) = api_key_header.to_str() {
+                // Check if it's a JWT token (starts with eyJ)
+                if key.starts_with("eyJ") {
+                    return jwt_auth.validate_token(key).map(Some);
+                }
+            }
+        }
+
+        if self.require_auth {
+            Err(AuthError::MissingToken)
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -299,4 +344,162 @@ pub async fn server_info_handler(State(state): State<Arc<SseState>>) -> impl Int
         active_sessions: state.sessions.session_count().await,
     };
     Json(info)
+}
+
+// ============================================================================
+// Authentication Endpoints
+// ============================================================================
+
+/// Login request body
+#[derive(Debug, Deserialize)]
+pub struct LoginRequest {
+    pub username: String,
+    pub password: String,
+}
+
+/// Refresh token request body
+#[derive(Debug, Deserialize)]
+pub struct RefreshRequest {
+    pub refresh_token: String,
+}
+
+/// Auth error response
+#[derive(Debug, Serialize)]
+pub struct AuthErrorResponse {
+    pub error: String,
+    pub error_code: String,
+}
+
+impl AuthErrorResponse {
+    fn from_auth_error(err: &AuthError) -> Self {
+        let (error, error_code) = match err {
+            AuthError::InvalidCredentials => {
+                ("Invalid username or password".to_string(), "invalid_credentials".to_string())
+            }
+            AuthError::TokenExpired => {
+                ("Token has expired".to_string(), "token_expired".to_string())
+            }
+            AuthError::InvalidTokenType => {
+                ("Invalid token type".to_string(), "invalid_token_type".to_string())
+            }
+            AuthError::MissingToken => {
+                ("Missing authentication token".to_string(), "missing_token".to_string())
+            }
+            AuthError::InsufficientPermissions => {
+                ("Insufficient permissions".to_string(), "insufficient_permissions".to_string())
+            }
+            _ => (err.to_string(), "auth_error".to_string()),
+        };
+        Self { error, error_code }
+    }
+}
+
+/// POST /auth/token - Login and get JWT tokens
+pub async fn login_handler(
+    State(state): State<Arc<SseState>>,
+    Json(request): Json<LoginRequest>,
+) -> impl IntoResponse {
+    let jwt_auth = match &state.jwt_auth {
+        Some(auth) => auth,
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(AuthErrorResponse {
+                    error: "Authentication not configured".to_string(),
+                    error_code: "auth_not_configured".to_string(),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    // Authenticate user
+    match jwt_auth.authenticate(&request.username, &request.password) {
+        Ok(user) => {
+            // Generate tokens
+            match jwt_auth.generate_tokens(user) {
+                Ok(tokens) => (StatusCode::OK, Json(tokens)).into_response(),
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(AuthErrorResponse::from_auth_error(&e)),
+                )
+                    .into_response(),
+            }
+        }
+        Err(e) => (
+            StatusCode::UNAUTHORIZED,
+            Json(AuthErrorResponse::from_auth_error(&e)),
+        )
+            .into_response(),
+    }
+}
+
+/// POST /auth/refresh - Refresh access token
+pub async fn refresh_handler(
+    State(state): State<Arc<SseState>>,
+    Json(request): Json<RefreshRequest>,
+) -> impl IntoResponse {
+    let jwt_auth = match &state.jwt_auth {
+        Some(auth) => auth,
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(AuthErrorResponse {
+                    error: "Authentication not configured".to_string(),
+                    error_code: "auth_not_configured".to_string(),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    match jwt_auth.refresh_access_token(&request.refresh_token) {
+        Ok(tokens) => (StatusCode::OK, Json(tokens)).into_response(),
+        Err(e) => {
+            let status = match &e {
+                AuthError::TokenExpired => StatusCode::UNAUTHORIZED,
+                AuthError::InvalidTokenType => StatusCode::BAD_REQUEST,
+                _ => StatusCode::UNAUTHORIZED,
+            };
+            (status, Json(AuthErrorResponse::from_auth_error(&e))).into_response()
+        }
+    }
+}
+
+/// GET /auth/me - Get current user info from token
+#[derive(Debug, Serialize)]
+pub struct UserInfoResponse {
+    pub username: String,
+    pub permissions: Vec<String>,
+    pub token_expires_at: i64,
+}
+
+pub async fn me_handler(
+    State(state): State<Arc<SseState>>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    match state.validate_auth(&headers) {
+        Ok(Some(claims)) => {
+            let info = UserInfoResponse {
+                username: claims.sub,
+                permissions: claims.permissions,
+                token_expires_at: claims.exp,
+            };
+            (StatusCode::OK, Json(info)).into_response()
+        }
+        Ok(None) => (
+            StatusCode::OK,
+            Json(UserInfoResponse {
+                username: "anonymous".to_string(),
+                permissions: vec!["*".to_string()],
+                token_expires_at: 0,
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::UNAUTHORIZED,
+            Json(AuthErrorResponse::from_auth_error(&e)),
+        )
+            .into_response(),
+    }
 }
