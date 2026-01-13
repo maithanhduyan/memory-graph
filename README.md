@@ -19,6 +19,10 @@
 
 ---
 
+> ⚠️ **DISCLAIMER: ALL SOURCE CODE IS AI-GENERATED. THE AUTHOR ASSUMES NO LIABILITY FOR PATENT, INTELLECTUAL PROPERTY, OR LEGAL COMPLIANCE ISSUES IN ANY JURISDICTION.**
+
+---
+
 ## 🎯 The Problem
 
 AI Agents forget everything between sessions. They hallucinate facts. They lose context.
