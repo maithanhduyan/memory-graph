@@ -6,6 +6,9 @@ debug/
 # Cargo lock (optional - keep for reproducible builds)
 # Cargo.lock
 
+# JWT secret files
+*.jwt_*
+
 # IDE
 .idea/
 *.swp

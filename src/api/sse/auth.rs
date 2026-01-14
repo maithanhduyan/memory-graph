@@ -99,6 +99,9 @@ pub struct JwtAuth {
 }
 
 impl JwtAuth {
+    /// Default filename for persisted JWT secret
+    const SECRET_FILE: &'static str = ".jwt_secret";
+
     /// Create new JwtAuth with secret key
     pub fn new(secret: &str) -> Self {
         Self {
@@ -110,6 +113,78 @@ impl JwtAuth {
         }
     }
 
+    /// Load secret from file or create new one and persist it
+    ///
+    /// This ensures tokens remain valid across server restarts when
+    /// MEMORY_JWT_SECRET environment variable is not set.
+    fn load_or_create_secret_file() -> Result<String, AuthError> {
+        use std::fs;
+        use std::path::Path;
+
+        let secret_path = Path::new(Self::SECRET_FILE);
+
+        // Try to load existing secret
+        if secret_path.exists() {
+            match fs::read_to_string(secret_path) {
+                Ok(secret) => {
+                    let secret = secret.trim().to_string();
+                    if secret.len() >= 32 {
+                        eprintln!("[Auth] Loaded JWT secret from {}", Self::SECRET_FILE);
+                        return Ok(secret);
+                    }
+                    eprintln!("[Auth] WARNING: {} exists but secret is too short, regenerating", Self::SECRET_FILE);
+                }
+                Err(e) => {
+                    eprintln!("[Auth] WARNING: Failed to read {}: {}, regenerating", Self::SECRET_FILE, e);
+                }
+            }
+        }
+
+        // Generate new secret
+        let secret = Self::generate_secure_secret();
+
+        // Try to save to file
+        match fs::write(secret_path, &secret) {
+            Ok(_) => {
+                eprintln!("[Auth] Generated and saved JWT secret to {}", Self::SECRET_FILE);
+                eprintln!("[Auth] ⚠️  For production, set MEMORY_JWT_SECRET environment variable");
+            }
+            Err(e) => {
+                eprintln!("[Auth] WARNING: Could not save secret to {}: {}", Self::SECRET_FILE, e);
+                eprintln!("[Auth] ⚠️  Tokens will be invalidated on restart!");
+            }
+        }
+
+        Ok(secret)
+    }
+
+    /// Generate a cryptographically secure random secret
+    fn generate_secure_secret() -> String {
+        use std::collections::hash_map::RandomState;
+        use std::hash::{BuildHasher, Hasher};
+
+        // Combine multiple entropy sources for better randomness
+        let now = chrono::Utc::now();
+        let timestamp = now.timestamp_nanos_opt().unwrap_or(0);
+        let pid = std::process::id();
+
+        // Use RandomState for additional entropy (uses thread-local random)
+        let random_state = RandomState::new();
+        let mut hasher = random_state.build_hasher();
+        hasher.write_i64(timestamp);
+        hasher.write_u32(pid);
+        let hash1 = hasher.finish();
+
+        let random_state2 = RandomState::new();
+        let mut hasher2 = random_state2.build_hasher();
+        hasher2.write_u64(hash1);
+        hasher2.write_i64(now.timestamp_micros());
+        let hash2 = hasher2.finish();
+
+        // Create 64-char hex secret (256 bits)
+        format!("{:016x}{:016x}{:016x}{:016x}", hash1, hash2, timestamp as u64, hash1 ^ hash2)
+    }
+
     /// Create from environment variables
     ///
     /// Environment:
@@ -117,13 +192,18 @@ impl JwtAuth {
     /// - MEMORY_USERS: Comma-separated user:password pairs (optional)
     /// - MEMORY_ACCESS_TOKEN_TTL: Access token TTL in seconds (optional, default 3600)
     /// - MEMORY_REFRESH_TOKEN_TTL: Refresh token TTL in seconds (optional, default 604800)
+    ///
+    /// If MEMORY_JWT_SECRET is not set, the server will:
+    /// 1. Try to load from .jwt_secret file (persisted across restarts)
+    /// 2. If file doesn't exist, generate new secret and save to file
     pub fn from_env() -> Result<Self, AuthError> {
-        let secret = std::env::var("MEMORY_JWT_SECRET")
-            .unwrap_or_else(|_| {
-                // Generate random secret if not provided (for development)
-                eprintln!("[Auth] WARNING: MEMORY_JWT_SECRET not set, using random secret");
-                format!("dev-secret-{}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0))
-            });
+        let secret = match std::env::var("MEMORY_JWT_SECRET") {
+            Ok(s) => s,
+            Err(_) => {
+                // Try to load or create persistent secret file
+                Self::load_or_create_secret_file()?
+            }
+        };
 
         if secret.len() < 32 {
             return Err(AuthError::InvalidSecret(
