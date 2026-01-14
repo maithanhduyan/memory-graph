@@ -2,7 +2,7 @@
 //!
 //! This module contains concrete implementations of inference rules.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::types::{InferStats, InferredRelation, KnowledgeGraph, Relation};
 
@@ -19,6 +19,18 @@ fn get_decay_factor(relation_type: &str) -> f32 {
     }
 }
 
+/// Build an adjacency map for O(1) lookup of outgoing relations
+/// This converts O(N) per-node lookup to O(1) using pre-built HashMap
+fn build_adjacency_map(relations: &[Relation]) -> HashMap<&str, Vec<&Relation>> {
+    let mut map: HashMap<&str, Vec<&Relation>> = HashMap::new();
+    for relation in relations {
+        map.entry(relation.from.as_str())
+            .or_default()
+            .push(relation);
+    }
+    map
+}
+
 /// Transitive Dependency Rule
 ///
 /// Infers transitive relations using BFS traversal.
@@ -29,6 +41,7 @@ fn get_decay_factor(relation_type: &str) -> f32 {
 /// - Cycle detection via HashSet
 /// - Confidence decay per hop
 /// - BFS for shortest-path-first (Occam's Razor)
+/// - O(1) relation lookup via pre-built adjacency map
 pub struct TransitiveDependencyRule {
     max_depth: usize,
 }
@@ -74,6 +87,9 @@ impl InferenceRule for TransitiveDependencyRule {
             return (inferred, stats);
         }
 
+        // Pre-build adjacency map for O(1) lookup instead of O(N) filter per node
+        let adjacency_map = build_adjacency_map(&graph.relations);
+
         // BFS queue: (current_node, path, relation_types_in_path, confidence)
         let mut queue: VecDeque<(String, Vec<String>, Vec<String>, f32)> = VecDeque::new();
         queue.push_back((target.to_string(), vec![target.to_string()], vec![], 1.0));
@@ -89,12 +105,11 @@ impl InferenceRule for TransitiveDependencyRule {
                 continue;
             }
 
-            // Find all outgoing relations from current node
-            let outgoing: Vec<&Relation> = graph
-                .relations
-                .iter()
-                .filter(|r| r.from == current)
-                .collect();
+            // O(1) lookup of outgoing relations via adjacency map
+            let outgoing = adjacency_map
+                .get(current.as_str())
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]);
 
             for relation in outgoing {
                 let next_node = &relation.to;
