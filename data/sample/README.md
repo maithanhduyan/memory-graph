@@ -1,8 +1,10 @@
-# Sample Data for Project Management
+# Sample Data for Memory Graph
 
-Thư mục này chứa các file JSONL mẫu cho việc quản lý dự án phần mềm với Memory Graph.
+Thư mục này chứa các file JSONL mẫu cho Memory Graph MCP Server.
 
 ## 📁 Files
+
+### Project Management
 
 | File | Mô tả | Entity Types |
 |------|-------|--------------|
@@ -12,6 +14,13 @@ Thư mục này chứa các file JSONL mẫu cho việc quản lý dự án ph�
 | `release-planning.jsonl` | Release & Gantt chart | Release, Phase, Deadline, GanttTask, CriticalPath |
 | `risk-register.jsonl` | Risk management | Risk, Mitigation, Issue |
 | `meeting-notes.jsonl` | Meetings & Decisions | Meeting, Decision, ActionItem |
+
+### Industry Use Cases
+
+| File | Mô tả | Entity Types |
+|------|-------|--------------|
+| `aml-sample-data.jsonl` | Anti-Money Laundering demo | Customer, Account, Transaction, Fault, Alert |
+| `fta-nuclear-loca.jsonl` | Fault Tree Analysis - Nuclear LOCA | TopEvent, Gate, BasicEvent, IntermediateEvent, Mitigation, MinimalCutSet |
 
 ## 🚀 Usage
 

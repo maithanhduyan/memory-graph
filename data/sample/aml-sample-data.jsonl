@@ -1,0 +1,57 @@
+{"type":"entity","name":"Customer: Nguyen Van A","entityType":"Customer","observations":["ID: C001","Risk Level: Medium","Account opened: 2023-01-15","Occupation: Business Owner","Country: Vietnam","KYC Status: Verified","Annual Income: 500,000,000 VND"]}
+{"type":"entity","name":"Customer: Tran Thi B","entityType":"Customer","observations":["ID: C002","Risk Level: Low","Account opened: 2022-05-20","Occupation: Office Worker","Country: Vietnam","KYC Status: Verified","Annual Income: 180,000,000 VND"]}
+{"type":"entity","name":"Customer: Le Van C","entityType":"Customer","observations":["ID: C003","Risk Level: High","Account opened: 2024-11-01","Occupation: Unknown","Country: Vietnam","⚠️ PEP (Politically Exposed Person): Yes","KYC Status: Enhanced Due Diligence Required"]}
+{"type":"entity","name":"Customer: Pham D (Shell Company)","entityType":"Customer","observations":["ID: C004","Risk Level: Critical","Account opened: 2025-06-15","Type: Corporate","Country: British Virgin Islands","⚠️ Shell company pattern detected","⚠️ No physical address verified","KYC Status: Failed"]}
+{"type":"entity","name":"Account: ACC-001","entityType":"Account","observations":["Owner: Nguyen Van A","Type: Savings","Balance: 150,000,000 VND","Status: Active","Branch: HCM-001"]}
+{"type":"entity","name":"Account: ACC-002","entityType":"Account","observations":["Owner: Tran Thi B","Type: Checking","Balance: 25,000,000 VND","Status: Active","Branch: HCM-002"]}
+{"type":"entity","name":"Account: ACC-003","entityType":"Account","observations":["Owner: Le Van C","Type: Business","Balance: 2,500,000,000 VND","Status: Under Review","Branch: HN-001"]}
+{"type":"entity","name":"Account: ACC-004","entityType":"Account","observations":["Owner: Pham D (Shell Company)","Type: Corporate","Balance: 50,000,000,000 VND","Status: Flagged","⚠️ Unusual balance for new account","Branch: Offshore"]}
+{"type":"entity","name":"TXN-001: Deposit 195M","entityType":"Transaction","observations":["Type: Cash Deposit","Amount: 195,000,000 VND","Time: 2026-01-14 09:15:00","From: Cash","To: ACC-001","Channel: Branch","Location: Ho Chi Minh City","⚠️ Just below 200M threshold","Status: Flagged for review"]}
+{"type":"entity","name":"TXN-002: Deposit 198M","entityType":"Transaction","observations":["Type: Cash Deposit","Amount: 198,000,000 VND","Time: 2026-01-14 10:30:00","From: Cash","To: ACC-001","Channel: Branch","Location: Ho Chi Minh City","⚠️ Just below 200M threshold","Status: Flagged for review"]}
+{"type":"entity","name":"TXN-003: Deposit 192M","entityType":"Transaction","observations":["Type: Cash Deposit","Amount: 192,000,000 VND","Time: 2026-01-14 14:45:00","From: Cash","To: ACC-001","Channel: Branch","Location: Ho Chi Minh City","⚠️ Just below 200M threshold","⚠️ STRUCTURING DETECTED: 3rd deposit below threshold in 24h","Status: Alert Generated"]}
+{"type":"entity","name":"TXN-004: Transfer 500M","entityType":"Transaction","observations":["Type: Internal Transfer","Amount: 500,000,000 VND","Time: 2026-01-14 15:00:00","From: ACC-001","To: ACC-003","Channel: Online Banking","Status: Processing"]}
+{"type":"entity","name":"TXN-005: Transfer 2B","entityType":"Transaction","observations":["Type: Wire Transfer","Amount: 2,000,000,000 VND","Time: 2026-01-14 15:30:00","From: ACC-003","To: ACC-004 (Shell Company)","Channel: SWIFT","⚠️ CRITICAL: Large transfer to offshore shell company","⚠️ Destination: British Virgin Islands","Status: BLOCKED - Pending Investigation"]}
+{"type":"entity","name":"TXN-006: Transfer 300M","entityType":"Transaction","observations":["Type: Internal Transfer","Amount: 300,000,000 VND","Time: 2026-01-14 16:00:00","From: ACC-003","To: ACC-001","Channel: Online Banking","Status: Processing"]}
+{"type":"entity","name":"TXN-007: Transfer 280M","entityType":"Transaction","observations":["Type: Internal Transfer","Amount: 280,000,000 VND","Time: 2026-01-14 16:15:00","From: ACC-001","To: ACC-002","Channel: Online Banking","Status: Processing"]}
+{"type":"entity","name":"TXN-008: Transfer 250M","entityType":"Transaction","observations":["Type: Wire Transfer","Amount: 250,000,000 VND","Time: 2026-01-14 16:30:00","From: ACC-002","To: External (Unknown)","Channel: SWIFT","⚠️ LAYERING DETECTED: 4 rapid transfers through multiple accounts","Status: Under Review"]}
+{"type":"entity","name":"Fault: Structuring","entityType":"Fault","observations":["Description: Breaking large amounts into smaller deposits","Pattern: Multiple deposits just below reporting threshold","Threshold: >3 transactions of 180-199M VND within 24h","Risk Score: 85/100","Category: Placement"]}
+{"type":"entity","name":"Fault: Layering","entityType":"Fault","observations":["Description: Complex web of transfers to obscure origin","Pattern: Funds moving through 3+ accounts rapidly","Threshold: >5 transfers between accounts within 48h","Risk Score: 90/100","Category: Layering"]}
+{"type":"entity","name":"Fault: Shell Company Transfer","entityType":"Fault","observations":["Description: Large transfers to offshore shell companies","Pattern: Wire transfer to tax haven + shell company","Threshold: Any transfer >500M VND to high-risk jurisdiction","Risk Score: 95/100","Category: Integration"]}
+{"type":"entity","name":"Fault: Unusual Activity","entityType":"Fault","observations":["Description: Activity inconsistent with customer profile","Pattern: Transaction volume 5x normal pattern","Threshold: Deviation >300% from baseline","Risk Score: 70/100","Category: Behavioral"]}
+{"type":"entity","name":"Alert: AML-2026-001","entityType":"Alert","observations":["Type: Structuring Alert","Customer: Nguyen Van A","Account: ACC-001","Trigger: 3 deposits just below threshold within 6 hours","Total Amount: 585,000,000 VND","Risk Score: 85/100","Status: Open","Priority: P2","Assigned To: Compliance Team"]}
+{"type":"entity","name":"Alert: AML-2026-002","entityType":"Alert","observations":["Type: Shell Company Transfer","Customer: Le Van C → Pham D","Route: ACC-003 → ACC-004","Trigger: 2B VND wire to offshore shell company","Risk Score: 95/100","Status: CRITICAL - Escalated to Management","Priority: P1","SAR Filed: Yes","Assigned To: Senior Compliance Officer"]}
+{"type":"entity","name":"Alert: AML-2026-003","entityType":"Alert","observations":["Type: Layering Pattern","Customers: Le Van C, Nguyen Van A, Tran Thi B","Route: ACC-003 → ACC-001 → ACC-002 → External","Trigger: Complex fund flow through 3+ accounts","Total Amount: 830,000,000 VND in 30 minutes","Risk Score: 90/100","Status: Under Investigation","Priority: P1","Assigned To: Investigation Unit"]}
+{"type":"relation","from":"Customer: Nguyen Van A","to":"Account: ACC-001","relationType":"owns"}
+{"type":"relation","from":"Customer: Tran Thi B","to":"Account: ACC-002","relationType":"owns"}
+{"type":"relation","from":"Customer: Le Van C","to":"Account: ACC-003","relationType":"owns"}
+{"type":"relation","from":"Customer: Pham D (Shell Company)","to":"Account: ACC-004","relationType":"owns"}
+{"type":"relation","from":"TXN-001: Deposit 195M","to":"Account: ACC-001","relationType":"credits"}
+{"type":"relation","from":"TXN-002: Deposit 198M","to":"Account: ACC-001","relationType":"credits"}
+{"type":"relation","from":"TXN-003: Deposit 192M","to":"Account: ACC-001","relationType":"credits"}
+{"type":"relation","from":"TXN-004: Transfer 500M","to":"Account: ACC-003","relationType":"credits"}
+{"type":"relation","from":"Account: ACC-001","to":"TXN-004: Transfer 500M","relationType":"debits"}
+{"type":"relation","from":"TXN-005: Transfer 2B","to":"Account: ACC-004","relationType":"credits"}
+{"type":"relation","from":"Account: ACC-003","to":"TXN-005: Transfer 2B","relationType":"debits"}
+{"type":"relation","from":"TXN-006: Transfer 300M","to":"Account: ACC-001","relationType":"credits"}
+{"type":"relation","from":"Account: ACC-003","to":"TXN-006: Transfer 300M","relationType":"debits"}
+{"type":"relation","from":"TXN-007: Transfer 280M","to":"Account: ACC-002","relationType":"credits"}
+{"type":"relation","from":"Account: ACC-001","to":"TXN-007: Transfer 280M","relationType":"debits"}
+{"type":"relation","from":"Account: ACC-002","to":"TXN-008: Transfer 250M","relationType":"debits"}
+{"type":"relation","from":"TXN-001: Deposit 195M","to":"Fault: Structuring","relationType":"triggers"}
+{"type":"relation","from":"TXN-002: Deposit 198M","to":"Fault: Structuring","relationType":"triggers"}
+{"type":"relation","from":"TXN-003: Deposit 192M","to":"Fault: Structuring","relationType":"triggers"}
+{"type":"relation","from":"TXN-005: Transfer 2B","to":"Fault: Shell Company Transfer","relationType":"triggers"}
+{"type":"relation","from":"TXN-006: Transfer 300M","to":"Fault: Layering","relationType":"triggers"}
+{"type":"relation","from":"TXN-007: Transfer 280M","to":"Fault: Layering","relationType":"triggers"}
+{"type":"relation","from":"TXN-008: Transfer 250M","to":"Fault: Layering","relationType":"triggers"}
+{"type":"relation","from":"Alert: AML-2026-001","to":"Customer: Nguyen Van A","relationType":"investigates"}
+{"type":"relation","from":"Alert: AML-2026-001","to":"Fault: Structuring","relationType":"caused_by"}
+{"type":"relation","from":"Alert: AML-2026-002","to":"Customer: Le Van C","relationType":"investigates"}
+{"type":"relation","from":"Alert: AML-2026-002","to":"Customer: Pham D (Shell Company)","relationType":"investigates"}
+{"type":"relation","from":"Alert: AML-2026-002","to":"Fault: Shell Company Transfer","relationType":"caused_by"}
+{"type":"relation","from":"Alert: AML-2026-003","to":"Customer: Le Van C","relationType":"investigates"}
+{"type":"relation","from":"Alert: AML-2026-003","to":"Customer: Nguyen Van A","relationType":"investigates"}
+{"type":"relation","from":"Alert: AML-2026-003","to":"Customer: Tran Thi B","relationType":"investigates"}
+{"type":"relation","from":"Alert: AML-2026-003","to":"Fault: Layering","relationType":"caused_by"}
+{"type":"relation","from":"Customer: Le Van C","to":"Customer: Pham D (Shell Company)","relationType":"associated_with"}
+{"type":"relation","from":"Customer: Nguyen Van A","to":"Customer: Le Van C","relationType":"transacts_with"}

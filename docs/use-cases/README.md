@@ -22,6 +22,32 @@ Sử dụng Memory-Graph như một hệ thống Anti-Money Laundering với:
 
 ---
 
+### 2. [Fault Tree Analysis (FTA)](./Fault-Tree-Analysis.md)
+
+**Domain**: Safety Engineering & Reliability Analysis
+
+Sử dụng Memory-Graph cho phân tích cây lỗi trong các hệ thống an toàn quan trọng:
+- Nuclear Power Plant (LOCA scenario)
+- Probabilistic Risk Assessment (PRA)
+- Common Cause Failure detection
+- Minimal Cut Set analysis
+
+**Highlights**:
+- 🏭 Nuclear LOCA case study với NUREG-0492 standard
+- 🔗 AND/OR gate modeling với graph relations
+- 🧠 Inference Engine phát hiện failure paths ẩn
+- 📊 Importance measures (FV, RAW, RRW)
+- ⚠️ Common Cause Failure (CCF) detection
+- 📋 Mitigation tracking
+
+**Real-World Applications**:
+- NASA Space Shuttle PRA
+- ISO 26262 Automotive Safety
+- IEC 62304 Medical Devices
+- Oil & Gas Safety Analysis
+
+---
+
 ## 🚀 Upcoming Use Cases
 
 ### Planned
