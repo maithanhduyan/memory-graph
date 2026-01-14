@@ -147,3 +147,61 @@ pub async fn get_stats(State(state): State<Arc<AppState>>) -> impl IntoResponse 
     let sequence_id = state.current_sequence_id();
     Json(ApiResponse::new(stats, sequence_id))
 }
+
+/// Query parameters for event replay
+#[derive(Debug, Deserialize)]
+pub struct EventReplayParams {
+    /// Get events after this sequence ID
+    pub since: u64,
+}
+
+/// Response for GET /api/events/replay
+#[derive(Debug, Serialize)]
+pub struct EventReplayResponse {
+    /// Events since the requested sequence ID
+    pub events: Vec<crate::api::websocket::events::WsMessage>,
+    /// Whether a full refresh is needed (events too old)
+    pub needs_full_refresh: bool,
+    /// Oldest available sequence ID in history
+    pub oldest_available: Option<u64>,
+    /// Current sequence ID
+    pub current_sequence_id: u64,
+}
+
+/// GET /api/events/replay - Replay missed events for client recovery
+///
+/// Clients can request events they missed during disconnection.
+/// If the requested sequence is too old (outside history buffer),
+/// `needs_full_refresh` will be true and client should fetch full graph.
+pub async fn get_events_replay(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<EventReplayParams>,
+) -> impl IntoResponse {
+    let current_sequence_id = state.current_sequence_id();
+
+    // Get broadcaster if available
+    let broadcaster = crate::api::websocket::get_broadcaster();
+
+    let (events, needs_full_refresh, oldest_available) = match broadcaster {
+        Some(b) => {
+            let oldest = b.oldest_sequence_id();
+            match b.get_events_since(params.since) {
+                Some(events) => (events, false, oldest),
+                None => (Vec::new(), true, oldest), // Too old, needs refresh
+            }
+        }
+        None => {
+            // Broadcaster not initialized (no WebSocket/SSE enabled)
+            (Vec::new(), false, None)
+        }
+    };
+
+    let response = EventReplayResponse {
+        events,
+        needs_full_refresh,
+        oldest_available,
+        current_sequence_id,
+    };
+
+    Json(ApiResponse::new(response, current_sequence_id))
+}

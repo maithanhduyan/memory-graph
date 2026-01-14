@@ -66,18 +66,20 @@ pub fn create_relations(kb: &KnowledgeBase, relations: Vec<Relation>) -> McpResu
     let entity_names: HashSet<String> = graph.entities.iter().map(|e| e.name.clone()).collect();
     let now = current_timestamp();
 
-    let existing_relations: HashSet<String> = graph
+    // Use tuple of owned Strings to avoid borrow issues
+    let existing_relations: HashSet<(String, String, String)> = graph
         .relations
         .iter()
-        .map(|r| format!("{}|{}|{}", r.from, r.to, r.relation_type))
+        .map(|r| (r.from.clone(), r.to.clone(), r.relation_type.clone()))
         .collect();
 
     let mut created = Vec::new();
     for mut relation in relations {
         if entity_names.contains(&relation.from) && entity_names.contains(&relation.to) {
-            let key = format!(
-                "{}|{}|{}",
-                relation.from, relation.to, relation.relation_type
+            let key = (
+                relation.from.clone(),
+                relation.to.clone(),
+                relation.relation_type.clone(),
             );
             if !existing_relations.contains(&key) {
                 // Auto-fill user info if not provided
@@ -295,13 +297,14 @@ pub fn delete_relations(kb: &KnowledgeBase, relations: Vec<Relation>) -> McpResu
         }
     }
 
-    let to_delete: HashSet<String> = relations
+    // Use tuple instead of string concat to avoid issues with | in entity names
+    let to_delete: HashSet<(String, String, String)> = relations
         .iter()
-        .map(|r| format!("{}|{}|{}", r.from, r.to, r.relation_type))
+        .map(|r| (r.from.clone(), r.to.clone(), r.relation_type.clone()))
         .collect();
 
     graph.relations.retain(|r| {
-        let key = format!("{}|{}|{}", r.from, r.to, r.relation_type);
+        let key = (r.from.clone(), r.to.clone(), r.relation_type.clone());
         !to_delete.contains(&key)
     });
 

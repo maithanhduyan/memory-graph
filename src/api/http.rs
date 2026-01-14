@@ -60,6 +60,7 @@ pub fn create_router_with_auth(
         // REST API endpoints
         .route("/api/graph", get(graph::get_graph))
         .route("/api/graph/stats", get(graph::get_stats))
+        .route("/api/events/replay", get(graph::get_events_replay))
         .route("/api/entities", get(entities::list_entities))
         .route("/api/entities/:name", get(entities::get_entity))
         .route("/api/relations", get(relations::list_relations))

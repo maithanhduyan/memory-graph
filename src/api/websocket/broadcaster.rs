@@ -8,8 +8,14 @@
 //! Instead of modifying KnowledgeBase directly (which would add complexity
 //! and break the single-responsibility principle), we use a separate broadcaster
 //! that can be optionally initialized when running in HTTP mode.
+//!
+//! # Event Replay
+//!
+//! The broadcaster maintains a circular buffer of recent events for replay.
+//! Clients can reconnect with their last_sequence_id to receive missed events.
 
-use std::sync::OnceLock;
+use std::collections::VecDeque;
+use std::sync::{OnceLock, RwLock};
 use tokio::sync::broadcast;
 
 use super::events::{GraphEvent, WsMessage};
@@ -18,10 +24,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Global broadcaster instance (initialized once when HTTP server starts)
 static BROADCASTER: OnceLock<EventBroadcaster> = OnceLock::new();
 
+/// Maximum number of events to keep in history for replay
+const EVENT_HISTORY_SIZE: usize = 1000;
+
 /// Event broadcaster for WebSocket notifications
 pub struct EventBroadcaster {
     tx: broadcast::Sender<WsMessage>,
     sequence_counter: AtomicU64,
+    /// Circular buffer of recent events for replay on reconnect
+    event_history: RwLock<VecDeque<WsMessage>>,
 }
 
 impl EventBroadcaster {
@@ -31,6 +42,7 @@ impl EventBroadcaster {
         Self {
             tx,
             sequence_counter: AtomicU64::new(0),
+            event_history: RwLock::new(VecDeque::with_capacity(EVENT_HISTORY_SIZE)),
         }
     }
 
@@ -42,6 +54,16 @@ impl EventBroadcaster {
             sequence_id: seq,
             timestamp: chrono::Utc::now().timestamp(),
         };
+
+        // Store in history for replay
+        if let Ok(mut history) = self.event_history.write() {
+            if history.len() >= EVENT_HISTORY_SIZE {
+                history.pop_front();
+            }
+            history.push_back(msg.clone());
+        }
+
+        // Broadcast to live subscribers
         // Ignore errors - just means no receivers are connected
         let _ = self.tx.send(msg);
     }
@@ -59,6 +81,50 @@ impl EventBroadcaster {
     /// Get the sender for cloning into state
     pub fn sender(&self) -> broadcast::Sender<WsMessage> {
         self.tx.clone()
+    }
+
+    /// Get events since a given sequence ID for replay
+    ///
+    /// Returns None if the requested sequence is too old (no longer in history).
+    /// Returns empty Vec if already up to date.
+    pub fn get_events_since(&self, since_sequence_id: u64) -> Option<Vec<WsMessage>> {
+        let history = self.event_history.read().ok()?;
+
+        // Check if we have events in history
+        if history.is_empty() {
+            return Some(Vec::new());
+        }
+
+        // Get the oldest sequence ID in history
+        let oldest_seq = history.front().map(|m| m.sequence_id)?;
+
+        // If requested sequence is older than our history, return None
+        // Client needs to do a full refresh
+        if since_sequence_id < oldest_seq {
+            return None;
+        }
+
+        // Collect events newer than since_sequence_id
+        let events: Vec<WsMessage> = history
+            .iter()
+            .filter(|m| m.sequence_id > since_sequence_id)
+            .cloned()
+            .collect();
+
+        Some(events)
+    }
+
+    /// Get the oldest sequence ID still in history
+    pub fn oldest_sequence_id(&self) -> Option<u64> {
+        self.event_history
+            .read()
+            .ok()
+            .and_then(|h| h.front().map(|m| m.sequence_id))
+    }
+
+    /// Get the number of events in history
+    pub fn history_len(&self) -> usize {
+        self.event_history.read().map(|h| h.len()).unwrap_or(0)
     }
 }
 
@@ -144,5 +210,74 @@ mod tests {
         });
 
         assert_eq!(broadcaster.current_sequence_id(), 1);
+    }
+
+    #[test]
+    fn test_event_history_storage() {
+        let broadcaster = EventBroadcaster::new(100);
+
+        // Broadcast several events
+        for i in 0..5 {
+            broadcaster.broadcast(GraphEvent::EntityDeleted {
+                name: format!("Entity{}", i),
+                user: None,
+            });
+        }
+
+        assert_eq!(broadcaster.history_len(), 5);
+        assert_eq!(broadcaster.oldest_sequence_id(), Some(0));
+        assert_eq!(broadcaster.current_sequence_id(), 5);
+    }
+
+    #[test]
+    fn test_get_events_since() {
+        let broadcaster = EventBroadcaster::new(100);
+
+        // Broadcast 5 events (seq 0, 1, 2, 3, 4)
+        for i in 0..5 {
+            broadcaster.broadcast(GraphEvent::EntityDeleted {
+                name: format!("Entity{}", i),
+                user: None,
+            });
+        }
+
+        // Get events since seq 2 -> should return seq 3, 4
+        let events = broadcaster.get_events_since(2).unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].sequence_id, 3);
+        assert_eq!(events[1].sequence_id, 4);
+
+        // Get events since seq 4 -> should return empty
+        let events = broadcaster.get_events_since(4).unwrap();
+        assert_eq!(events.len(), 0);
+
+        // Get events since seq 0 -> should return seq 1, 2, 3, 4
+        let events = broadcaster.get_events_since(0).unwrap();
+        assert_eq!(events.len(), 4);
+    }
+
+    #[test]
+    fn test_history_circular_buffer() {
+        // Create broadcaster with small history for testing
+        let broadcaster = EventBroadcaster::new(100);
+
+        // Fill beyond EVENT_HISTORY_SIZE (1000)
+        for i in 0..1005 {
+            broadcaster.broadcast(GraphEvent::EntityDeleted {
+                name: format!("Entity{}", i),
+                user: None,
+            });
+        }
+
+        // Should have exactly 1000 events
+        assert_eq!(broadcaster.history_len(), 1000);
+        // Oldest should be seq 5 (first 5 were evicted)
+        assert_eq!(broadcaster.oldest_sequence_id(), Some(5));
+
+        // Request seq 0 should return None (too old)
+        assert!(broadcaster.get_events_since(0).is_none());
+
+        // Request seq 5 should work
+        assert!(broadcaster.get_events_since(5).is_some());
     }
 }
