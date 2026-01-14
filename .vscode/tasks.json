@@ -48,6 +48,20 @@
             "problemMatcher": [
                 "$rustc"
             ]
+        },
+        {
+            "label": "Run Memory MCP Server",
+            "type": "shell",
+            "command": " ${workspaceFolder}/target/release/memory-server.exe",
+            "args": [ "--mode", "http"],
+            "options": {
+                "cwd": "${workspaceFolder}/"
+            },
+            "group": {
+                "kind": "none",
+                "isDefault": false
+            },
+            "problemMatcher": []
         }
     ]
 }
