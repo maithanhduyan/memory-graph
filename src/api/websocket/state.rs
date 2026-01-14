@@ -2,15 +2,18 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::broadcast;
 
 use crate::knowledge_base::KnowledgeBase;
 use super::events::{GraphEvent, WsMessage};
 
 /// Shared application state for WebSocket connections
+///
+/// Uses Arc<KnowledgeBase> directly - KnowledgeBase has internal RwLock for thread safety.
+/// This ensures a single source of truth shared between SSE/MCP and REST/WebSocket.
 pub struct AppState {
-    /// The knowledge base
-    pub kb: Arc<RwLock<KnowledgeBase>>,
+    /// The knowledge base (single source of truth)
+    pub kb: Arc<KnowledgeBase>,
 
     /// Broadcast channel for sending events to all connected clients
     pub event_tx: broadcast::Sender<WsMessage>,
@@ -21,7 +24,7 @@ pub struct AppState {
 
 impl AppState {
     /// Create a new AppState with the given knowledge base
-    pub fn new(kb: Arc<RwLock<KnowledgeBase>>) -> Self {
+    pub fn new(kb: Arc<KnowledgeBase>) -> Self {
         // Buffer 1024 events - if clients are too slow, they'll miss events
         // and need to do a full refresh
         let (event_tx, _) = broadcast::channel(1024);
@@ -64,7 +67,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_broadcast_increments_sequence() {
-        let kb = Arc::new(RwLock::new(KnowledgeBase::new()));
+        let kb = Arc::new(KnowledgeBase::new());
         let state = AppState::new(kb);
 
         assert_eq!(state.current_sequence_id(), 0);
@@ -79,7 +82,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_subscribe_receives_events() {
-        let kb = Arc::new(RwLock::new(KnowledgeBase::new()));
+        let kb = Arc::new(KnowledgeBase::new());
         let state = AppState::new(kb);
         let mut rx = state.subscribe();
 

@@ -345,4 +345,20 @@ AI Agent:
 3. AI biết cần làm Phase 8, tiếp tục không cần hỏi lại user
 ```
 
+## Auto-save Triggers
+
+AI Agent PHẢI tự động lưu vào Memory Graph khi:
+
+1. **"Summarized conversation history"** xuất hiện
+2. User nói: "ghi nhớ", "lưu lại", "remember this"
+3. Hoàn thành task lớn (fix bug, implement feature)
+4. Đưa ra decision quan trọng
+5. Giải thích concept phức tạp mà user có thể cần lại
+6. Trước khi kết thúc session hoặc chuyển chủ đề lớn
+7. Khi thinking quá lâu không có tiến triển rõ ràng
+
+### Template khi lưu:
+- Dùng `add_observations` cho entity đã có
+- Dùng `create_entities` cho knowledge mới
+
 **Important Note**: Always prioritize the integrity and efficiency of the knowledge graph when making suggestions or changes.

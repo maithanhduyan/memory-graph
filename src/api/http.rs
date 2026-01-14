@@ -18,8 +18,8 @@ use super::websocket::{handler::ws_handler, state::AppState};
 
 /// Create the Axum router with all endpoints
 ///
-/// Takes both AppState (for WebSocket/REST with async RwLock<KB>) and
-/// sync Arc<KnowledgeBase> (for SSE with MCP tools)
+/// Uses a single Arc<KnowledgeBase> shared by both SSE/MCP and REST/WebSocket.
+/// This ensures data consistency across all transports.
 pub fn create_router(state: Arc<AppState>, kb_sync: Arc<KnowledgeBase>) -> Router {
     create_router_with_auth(state, kb_sync, None, false)
 }
@@ -91,16 +91,15 @@ async fn health_check() -> &'static str {
 mod tests {
     use super::*;
     use crate::knowledge_base::KnowledgeBase;
-    use tokio::sync::RwLock;
     use axum::body::Body;
     use axum::http::Request;
     use tower::util::ServiceExt;
 
     #[tokio::test]
     async fn test_health_check() {
+        // Single KB instance - shared by both AppState and router
         let kb = Arc::new(KnowledgeBase::new());
-        let kb_async = Arc::new(RwLock::new(KnowledgeBase::new()));
-        let state = Arc::new(AppState::new(kb_async));
+        let state = Arc::new(AppState::new(Arc::clone(&kb)));
         let app = create_router(state, kb);
 
         let response = app
