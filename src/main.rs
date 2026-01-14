@@ -193,19 +193,14 @@ fn run_both_modes() -> McpResult<()> {
 
 /// Run the HTTP server with WebSocket support
 async fn run_http_server() -> McpResult<()> {
-    use tokio::sync::RwLock;
-
-    // Create sync KB for MCP tools (SSE transport)
-    let kb_sync = Arc::new(KnowledgeBase::new());
-
-    // Create async KB wrapper for WebSocket/REST
-    let kb_async = Arc::new(RwLock::new(KnowledgeBase::new()));
+    // Create SINGLE knowledge base - shared by both SSE/MCP and REST/WebSocket
+    let kb = Arc::new(KnowledgeBase::new());
 
     // Initialize global broadcaster for WebSocket events
     init_broadcaster(1024);
 
-    // Create AppState for WebSocket
-    let state = Arc::new(AppState::new(kb_async));
+    // Create AppState for WebSocket/REST using the same KB
+    let state = Arc::new(AppState::new(Arc::clone(&kb)));
 
     // Initialize JWT authentication if configured
     let (jwt_auth, require_auth) = match JwtAuth::from_env() {
@@ -222,8 +217,8 @@ async fn run_http_server() -> McpResult<()> {
         }
     };
 
-    // Create router with JWT auth
-    let app = create_router_with_auth(state, kb_sync, jwt_auth, require_auth);
+    // Create router with JWT auth - both SSE and REST/WS use the same kb
+    let app = create_router_with_auth(state, Arc::clone(&kb), jwt_auth, require_auth);
 
     // Bind to port 3030
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 3030));

@@ -51,8 +51,7 @@ pub async fn list_entities(
     State(state): State<Arc<AppState>>,
     Query(params): Query<ListEntitiesParams>,
 ) -> impl IntoResponse {
-    let kb = state.kb.read().await;
-    let graph = kb.graph.read().unwrap();
+    let graph = state.kb.graph.read().unwrap();
 
     // Filter by type if specified
     let mut entities: Vec<Entity> = if let Some(ref entity_type) = params.entity_type {
@@ -118,8 +117,7 @@ pub async fn get_entity(
     State(state): State<Arc<AppState>>,
     Path(name): Path<String>,
 ) -> impl IntoResponse {
-    let kb = state.kb.read().await;
-    let graph = kb.graph.read().unwrap();
+    let graph = state.kb.graph.read().unwrap();
 
     // URL decode the name (handles spaces and special chars)
     let decoded_name = urlencoding::decode(&name)

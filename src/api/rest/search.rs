@@ -47,16 +47,14 @@ pub async fn search_nodes(
         return (StatusCode::BAD_REQUEST, Json(error)).into_response();
     }
 
-    let kb = state.kb.read().await;
-
-    // Use existing search_nodes functionality
+    // Use existing search_nodes functionality (KnowledgeBase has internal RwLock)
     let limit = if params.limit > 0 {
         Some(params.limit.min(1000))
     } else {
         None
     };
 
-    match kb.search_nodes(&params.q, limit, params.include_relations) {
+    match state.kb.search_nodes(&params.q, limit, params.include_relations) {
         Ok(result) => {
             let sequence_id = state.current_sequence_id();
             let total = result.entities.len();
