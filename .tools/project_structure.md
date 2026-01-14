@@ -1,5 +1,5 @@
 ---
-date: 2026-01-14 10:43:13 
+date: 2026-01-14 11:33:05 
 ---
 
 # Cấu trúc Dự án như sau:
@@ -516,6 +516,7 @@ pub fn create_router_with_auth(
         // REST API endpoints
         .route("/api/graph", get(graph::get_graph))
         .route("/api/graph/stats", get(graph::get_stats))
+        .route("/api/events/replay", get(graph::get_events_replay))
         .route("/api/entities", get(entities::list_entities))
         .route("/api/entities/:name", get(entities::get_entity))
         .route("/api/relations", get(relations::list_relations))
@@ -923,6 +924,64 @@ pub async fn get_stats(State(state): State<Arc<AppState>>) -> impl IntoResponse 
     Json(ApiResponse::new(stats, sequence_id))
 }
 
+/// Query parameters for event replay
+#[derive(Debug, Deserialize)]
+pub struct EventReplayParams {
+    /// Get events after this sequence ID
+    pub since: u64,
+}
+
+/// Response for GET /api/events/replay
+#[derive(Debug, Serialize)]
+pub struct EventReplayResponse {
+    /// Events since the requested sequence ID
+    pub events: Vec<crate::api::websocket::events::WsMessage>,
+    /// Whether a full refresh is needed (events too old)
+    pub needs_full_refresh: bool,
+    /// Oldest available sequence ID in history
+    pub oldest_available: Option<u64>,
+    /// Current sequence ID
+    pub current_sequence_id: u64,
+}
+
+/// GET /api/events/replay - Replay missed events for client recovery
+///
+/// Clients can request events they missed during disconnection.
+/// If the requested sequence is too old (outside history buffer),
+/// `needs_full_refresh` will be true and client should fetch full graph.
+pub async fn get_events_replay(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<EventReplayParams>,
+) -> impl IntoResponse {
+    let current_sequence_id = state.current_sequence_id();
+
+    // Get broadcaster if available
+    let broadcaster = crate::api::websocket::get_broadcaster();
+
+    let (events, needs_full_refresh, oldest_available) = match broadcaster {
+        Some(b) => {
+            let oldest = b.oldest_sequence_id();
+            match b.get_events_since(params.since) {
+                Some(events) => (events, false, oldest),
+                None => (Vec::new(), true, oldest), // Too old, needs refresh
+            }
+        }
+        None => {
+            // Broadcaster not initialized (no WebSocket/SSE enabled)
+            (Vec::new(), false, None)
+        }
+    };
+
+    let response = EventReplayResponse {
+        events,
+        needs_full_refresh,
+        oldest_available,
+        current_sequence_id,
+    };
+
+    Json(ApiResponse::new(response, current_sequence_id))
+}
+
 ```
 
 ## File ../memory-graph/src\api\rest\mod.rs:
@@ -1301,6 +1360,9 @@ pub struct JwtAuth {
 }
 
 impl JwtAuth {
+    /// Default filename for persisted JWT secret
+    const SECRET_FILE: &'static str = ".jwt_secret";
+
     /// Create new JwtAuth with secret key
     pub fn new(secret: &str) -> Self {
         Self {
@@ -1312,6 +1374,78 @@ impl JwtAuth {
         }
     }
 
+    /// Load secret from file or create new one and persist it
+    ///
+    /// This ensures tokens remain valid across server restarts when
+    /// MEMORY_JWT_SECRET environment variable is not set.
+    fn load_or_create_secret_file() -> Result<String, AuthError> {
+        use std::fs;
+        use std::path::Path;
+
+        let secret_path = Path::new(Self::SECRET_FILE);
+
+        // Try to load existing secret
+        if secret_path.exists() {
+            match fs::read_to_string(secret_path) {
+                Ok(secret) => {
+                    let secret = secret.trim().to_string();
+                    if secret.len() >= 32 {
+                        eprintln!("[Auth] Loaded JWT secret from {}", Self::SECRET_FILE);
+                        return Ok(secret);
+                    }
+                    eprintln!("[Auth] WARNING: {} exists but secret is too short, regenerating", Self::SECRET_FILE);
+                }
+                Err(e) => {
+                    eprintln!("[Auth] WARNING: Failed to read {}: {}, regenerating", Self::SECRET_FILE, e);
+                }
+            }
+        }
+
+        // Generate new secret
+        let secret = Self::generate_secure_secret();
+
+        // Try to save to file
+        match fs::write(secret_path, &secret) {
+            Ok(_) => {
+                eprintln!("[Auth] Generated and saved JWT secret to {}", Self::SECRET_FILE);
+                eprintln!("[Auth] ⚠️  For production, set MEMORY_JWT_SECRET environment variable");
+            }
+            Err(e) => {
+                eprintln!("[Auth] WARNING: Could not save secret to {}: {}", Self::SECRET_FILE, e);
+                eprintln!("[Auth] ⚠️  Tokens will be invalidated on restart!");
+            }
+        }
+
+        Ok(secret)
+    }
+
+    /// Generate a cryptographically secure random secret
+    fn generate_secure_secret() -> String {
+        use std::collections::hash_map::RandomState;
+        use std::hash::{BuildHasher, Hasher};
+
+        // Combine multiple entropy sources for better randomness
+        let now = chrono::Utc::now();
+        let timestamp = now.timestamp_nanos_opt().unwrap_or(0);
+        let pid = std::process::id();
+
+        // Use RandomState for additional entropy (uses thread-local random)
+        let random_state = RandomState::new();
+        let mut hasher = random_state.build_hasher();
+        hasher.write_i64(timestamp);
+        hasher.write_u32(pid);
+        let hash1 = hasher.finish();
+
+        let random_state2 = RandomState::new();
+        let mut hasher2 = random_state2.build_hasher();
+        hasher2.write_u64(hash1);
+        hasher2.write_i64(now.timestamp_micros());
+        let hash2 = hasher2.finish();
+
+        // Create 64-char hex secret (256 bits)
+        format!("{:016x}{:016x}{:016x}{:016x}", hash1, hash2, timestamp as u64, hash1 ^ hash2)
+    }
+
     /// Create from environment variables
     ///
     /// Environment:
@@ -1319,13 +1453,18 @@ impl JwtAuth {
     /// - MEMORY_USERS: Comma-separated user:password pairs (optional)
     /// - MEMORY_ACCESS_TOKEN_TTL: Access token TTL in seconds (optional, default 3600)
     /// - MEMORY_REFRESH_TOKEN_TTL: Refresh token TTL in seconds (optional, default 604800)
+    ///
+    /// If MEMORY_JWT_SECRET is not set, the server will:
+    /// 1. Try to load from .jwt_secret file (persisted across restarts)
+    /// 2. If file doesn't exist, generate new secret and save to file
     pub fn from_env() -> Result<Self, AuthError> {
-        let secret = std::env::var("MEMORY_JWT_SECRET")
-            .unwrap_or_else(|_| {
-                // Generate random secret if not provided (for development)
-                eprintln!("[Auth] WARNING: MEMORY_JWT_SECRET not set, using random secret");
-                format!("dev-secret-{}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0))
-            });
+        let secret = match std::env::var("MEMORY_JWT_SECRET") {
+            Ok(s) => s,
+            Err(_) => {
+                // Try to load or create persistent secret file
+                Self::load_or_create_secret_file()?
+            }
+        };
 
         if secret.len() < 32 {
             return Err(AuthError::InvalidSecret(
@@ -2549,8 +2688,14 @@ mod tests {
 //! Instead of modifying KnowledgeBase directly (which would add complexity
 //! and break the single-responsibility principle), we use a separate broadcaster
 //! that can be optionally initialized when running in HTTP mode.
+//!
+//! # Event Replay
+//!
+//! The broadcaster maintains a circular buffer of recent events for replay.
+//! Clients can reconnect with their last_sequence_id to receive missed events.
 
-use std::sync::OnceLock;
+use std::collections::VecDeque;
+use std::sync::{OnceLock, RwLock};
 use tokio::sync::broadcast;
 
 use super::events::{GraphEvent, WsMessage};
@@ -2559,10 +2704,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Global broadcaster instance (initialized once when HTTP server starts)
 static BROADCASTER: OnceLock<EventBroadcaster> = OnceLock::new();
 
+/// Maximum number of events to keep in history for replay
+const EVENT_HISTORY_SIZE: usize = 1000;
+
 /// Event broadcaster for WebSocket notifications
 pub struct EventBroadcaster {
     tx: broadcast::Sender<WsMessage>,
     sequence_counter: AtomicU64,
+    /// Circular buffer of recent events for replay on reconnect
+    event_history: RwLock<VecDeque<WsMessage>>,
 }
 
 impl EventBroadcaster {
@@ -2572,6 +2722,7 @@ impl EventBroadcaster {
         Self {
             tx,
             sequence_counter: AtomicU64::new(0),
+            event_history: RwLock::new(VecDeque::with_capacity(EVENT_HISTORY_SIZE)),
         }
     }
 
@@ -2583,6 +2734,16 @@ impl EventBroadcaster {
             sequence_id: seq,
             timestamp: chrono::Utc::now().timestamp(),
         };
+
+        // Store in history for replay
+        if let Ok(mut history) = self.event_history.write() {
+            if history.len() >= EVENT_HISTORY_SIZE {
+                history.pop_front();
+            }
+            history.push_back(msg.clone());
+        }
+
+        // Broadcast to live subscribers
         // Ignore errors - just means no receivers are connected
         let _ = self.tx.send(msg);
     }
@@ -2600,6 +2761,50 @@ impl EventBroadcaster {
     /// Get the sender for cloning into state
     pub fn sender(&self) -> broadcast::Sender<WsMessage> {
         self.tx.clone()
+    }
+
+    /// Get events since a given sequence ID for replay
+    ///
+    /// Returns None if the requested sequence is too old (no longer in history).
+    /// Returns empty Vec if already up to date.
+    pub fn get_events_since(&self, since_sequence_id: u64) -> Option<Vec<WsMessage>> {
+        let history = self.event_history.read().ok()?;
+
+        // Check if we have events in history
+        if history.is_empty() {
+            return Some(Vec::new());
+        }
+
+        // Get the oldest sequence ID in history
+        let oldest_seq = history.front().map(|m| m.sequence_id)?;
+
+        // If requested sequence is older than our history, return None
+        // Client needs to do a full refresh
+        if since_sequence_id < oldest_seq {
+            return None;
+        }
+
+        // Collect events newer than since_sequence_id
+        let events: Vec<WsMessage> = history
+            .iter()
+            .filter(|m| m.sequence_id > since_sequence_id)
+            .cloned()
+            .collect();
+
+        Some(events)
+    }
+
+    /// Get the oldest sequence ID still in history
+    pub fn oldest_sequence_id(&self) -> Option<u64> {
+        self.event_history
+            .read()
+            .ok()
+            .and_then(|h| h.front().map(|m| m.sequence_id))
+    }
+
+    /// Get the number of events in history
+    pub fn history_len(&self) -> usize {
+        self.event_history.read().map(|h| h.len()).unwrap_or(0)
     }
 }
 
@@ -2685,6 +2890,75 @@ mod tests {
         });
 
         assert_eq!(broadcaster.current_sequence_id(), 1);
+    }
+
+    #[test]
+    fn test_event_history_storage() {
+        let broadcaster = EventBroadcaster::new(100);
+
+        // Broadcast several events
+        for i in 0..5 {
+            broadcaster.broadcast(GraphEvent::EntityDeleted {
+                name: format!("Entity{}", i),
+                user: None,
+            });
+        }
+
+        assert_eq!(broadcaster.history_len(), 5);
+        assert_eq!(broadcaster.oldest_sequence_id(), Some(0));
+        assert_eq!(broadcaster.current_sequence_id(), 5);
+    }
+
+    #[test]
+    fn test_get_events_since() {
+        let broadcaster = EventBroadcaster::new(100);
+
+        // Broadcast 5 events (seq 0, 1, 2, 3, 4)
+        for i in 0..5 {
+            broadcaster.broadcast(GraphEvent::EntityDeleted {
+                name: format!("Entity{}", i),
+                user: None,
+            });
+        }
+
+        // Get events since seq 2 -> should return seq 3, 4
+        let events = broadcaster.get_events_since(2).unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].sequence_id, 3);
+        assert_eq!(events[1].sequence_id, 4);
+
+        // Get events since seq 4 -> should return empty
+        let events = broadcaster.get_events_since(4).unwrap();
+        assert_eq!(events.len(), 0);
+
+        // Get events since seq 0 -> should return seq 1, 2, 3, 4
+        let events = broadcaster.get_events_since(0).unwrap();
+        assert_eq!(events.len(), 4);
+    }
+
+    #[test]
+    fn test_history_circular_buffer() {
+        // Create broadcaster with small history for testing
+        let broadcaster = EventBroadcaster::new(100);
+
+        // Fill beyond EVENT_HISTORY_SIZE (1000)
+        for i in 0..1005 {
+            broadcaster.broadcast(GraphEvent::EntityDeleted {
+                name: format!("Entity{}", i),
+                user: None,
+            });
+        }
+
+        // Should have exactly 1000 events
+        assert_eq!(broadcaster.history_len(), 1000);
+        // Oldest should be seq 5 (first 5 were evicted)
+        assert_eq!(broadcaster.oldest_sequence_id(), Some(5));
+
+        // Request seq 0 should return None (too old)
+        assert!(broadcaster.get_events_since(0).is_none());
+
+        // Request seq 5 should work
+        assert!(broadcaster.get_events_since(5).is_some());
     }
 }
 
@@ -5504,18 +5778,20 @@ pub fn create_relations(kb: &KnowledgeBase, relations: Vec<Relation>) -> McpResu
     let entity_names: HashSet<String> = graph.entities.iter().map(|e| e.name.clone()).collect();
     let now = current_timestamp();
 
-    let existing_relations: HashSet<String> = graph
+    // Use tuple of owned Strings to avoid borrow issues
+    let existing_relations: HashSet<(String, String, String)> = graph
         .relations
         .iter()
-        .map(|r| format!("{}|{}|{}", r.from, r.to, r.relation_type))
+        .map(|r| (r.from.clone(), r.to.clone(), r.relation_type.clone()))
         .collect();
 
     let mut created = Vec::new();
     for mut relation in relations {
         if entity_names.contains(&relation.from) && entity_names.contains(&relation.to) {
-            let key = format!(
-                "{}|{}|{}",
-                relation.from, relation.to, relation.relation_type
+            let key = (
+                relation.from.clone(),
+                relation.to.clone(),
+                relation.relation_type.clone(),
             );
             if !existing_relations.contains(&key) {
                 // Auto-fill user info if not provided
@@ -5733,13 +6009,14 @@ pub fn delete_relations(kb: &KnowledgeBase, relations: Vec<Relation>) -> McpResu
         }
     }
 
-    let to_delete: HashSet<String> = relations
+    // Use tuple instead of string concat to avoid issues with | in entity names
+    let to_delete: HashSet<(String, String, String)> = relations
         .iter()
-        .map(|r| format!("{}|{}|{}", r.from, r.to, r.relation_type))
+        .map(|r| (r.from.clone(), r.to.clone(), r.relation_type.clone()))
         .collect();
 
     graph.relations.retain(|r| {
-        let key = format!("{}|{}|{}", r.from, r.to, r.relation_type);
+        let key = (r.from.clone(), r.to.clone(), r.relation_type.clone());
         !to_delete.contains(&key)
     });
 

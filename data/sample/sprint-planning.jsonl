@@ -1,0 +1,29 @@
+{"type":"entity","name":"Sprint: Q1-2026-Sprint-3","entityType":"Sprint","observations":["Goal: Hoàn thành Auth module, ready for UAT","StartDate: 2026-01-13","EndDate: 2026-01-27","Duration: 2 weeks","Velocity Target: 21 points","Status: In Progress","Team: Backend Squad (4 devs)","Capacity: 80h total, 64h available (after meetings/ceremonies)"]}
+{"type":"entity","name":"Epic: User Authentication","entityType":"Epic","observations":["BusinessValue: High - Core security feature","Priority: P0","TargetRelease: v2.0.0","AcceptanceCriteria: Users can login via email/password and OAuth","Dependencies: Database schema, Email service","TotalPoints: 13"]}
+{"type":"entity","name":"Story: Login với Google OAuth","entityType":"Story","observations":["Points: 5","Priority: High","AcceptanceCriteria: User clicks 'Login with Google' → redirects to Google → returns with session","DoD: Code reviewed, unit tests passed, integration test passed, deployed to staging","Sprint: Q1-2026-Sprint-3"]}
+{"type":"entity","name":"Story: Login với Email/Password","entityType":"Story","observations":["Points: 3","Priority: High","AcceptanceCriteria: User enters email/password → validates → creates session","DoD: Code reviewed, unit tests passed, password hashed with bcrypt","Sprint: Q1-2026-Sprint-3"]}
+{"type":"entity","name":"Story: Forgot Password Flow","entityType":"Story","observations":["Points: 5","Priority: Medium","AcceptanceCriteria: User requests reset → receives email → clicks link → sets new password","DoD: Code reviewed, email template approved, token expires in 1h","Sprint: Q1-2026-Sprint-3"]}
+{"type":"entity","name":"Task: Setup Google OAuth config","entityType":"Task","observations":["Estimate: 2h","Actual: 2.5h","Assignee: Dev A","Status: Done","Parent: Story: Login với Google OAuth","Notes: Created project in Google Console, got client ID/secret"]}
+{"type":"entity","name":"Task: Implement OAuth callback handler","entityType":"Task","observations":["Estimate: 4h","Actual: null","Assignee: Dev A","Status: In Progress","Parent: Story: Login với Google OAuth","BlockedBy: null","Notes: Using passport-google-oauth20"]}
+{"type":"entity","name":"Task: Write OAuth integration tests","entityType":"Task","observations":["Estimate: 3h","Actual: null","Assignee: Dev B","Status: Not Started","Parent: Story: Login với Google OAuth","DependsOn: Task: Implement OAuth callback handler"]}
+{"type":"entity","name":"Task: Implement password validation","entityType":"Task","observations":["Estimate: 2h","Actual: 1.5h","Assignee: Dev C","Status: Done","Parent: Story: Login với Email/Password","Notes: Min 8 chars, 1 uppercase, 1 number, 1 special"]}
+{"type":"entity","name":"Task: Setup bcrypt hashing","entityType":"Task","observations":["Estimate: 1h","Actual: 1h","Assignee: Dev C","Status: Done","Parent: Story: Login với Email/Password","Notes: Using cost factor 12"]}
+{"type":"entity","name":"Dev A","entityType":"Person","observations":["Role: Senior Backend Developer","Skills: Node.js, OAuth, PostgreSQL","Allocation: 100% Sprint-3","Capacity: 32h/sprint (8h meetings, PTO 1 day)"]}
+{"type":"entity","name":"Dev B","entityType":"Person","observations":["Role: Backend Developer","Skills: Node.js, Testing, CI/CD","Allocation: 100% Sprint-3","Capacity: 36h/sprint"]}
+{"type":"entity","name":"Dev C","entityType":"Person","observations":["Role: Backend Developer","Skills: Node.js, Security, Database","Allocation: 50% Sprint-3 (50% maintenance)","Capacity: 18h/sprint"]}
+{"type":"relation","from":"Sprint: Q1-2026-Sprint-3","to":"Epic: User Authentication","relationType":"includes"}
+{"type":"relation","from":"Epic: User Authentication","to":"Story: Login với Google OAuth","relationType":"contains"}
+{"type":"relation","from":"Epic: User Authentication","to":"Story: Login với Email/Password","relationType":"contains"}
+{"type":"relation","from":"Epic: User Authentication","to":"Story: Forgot Password Flow","relationType":"contains"}
+{"type":"relation","from":"Story: Login với Google OAuth","to":"Task: Setup Google OAuth config","relationType":"contains"}
+{"type":"relation","from":"Story: Login với Google OAuth","to":"Task: Implement OAuth callback handler","relationType":"contains"}
+{"type":"relation","from":"Story: Login với Google OAuth","to":"Task: Write OAuth integration tests","relationType":"contains"}
+{"type":"relation","from":"Story: Login với Email/Password","to":"Task: Implement password validation","relationType":"contains"}
+{"type":"relation","from":"Story: Login với Email/Password","to":"Task: Setup bcrypt hashing","relationType":"contains"}
+{"type":"relation","from":"Task: Setup Google OAuth config","to":"Dev A","relationType":"assigned_to"}
+{"type":"relation","from":"Task: Implement OAuth callback handler","to":"Dev A","relationType":"assigned_to"}
+{"type":"relation","from":"Task: Write OAuth integration tests","to":"Dev B","relationType":"assigned_to"}
+{"type":"relation","from":"Task: Implement password validation","to":"Dev C","relationType":"assigned_to"}
+{"type":"relation","from":"Task: Setup bcrypt hashing","to":"Dev C","relationType":"assigned_to"}
+{"type":"relation","from":"Task: Write OAuth integration tests","to":"Task: Implement OAuth callback handler","relationType":"depends_on"}
+{"type":"relation","from":"Task: Implement OAuth callback handler","to":"Task: Setup Google OAuth config","relationType":"depends_on"}

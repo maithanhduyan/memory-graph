@@ -1,0 +1,15 @@
+{"type":"entity","name":"Standup: 2026-01-14 Backend Squad","entityType":"Standup","observations":["Date: 2026-01-14","Time: 09:00 AM","Team: Backend Squad","Duration: 12 minutes","Attendees: Dev A, Dev B, Dev C, Tech Lead","Format: Yesterday/Today/Blockers"]}
+{"type":"entity","name":"Standup Update: 2026-01-14 Dev A","entityType":"StandupUpdate","observations":["Person: Dev A","Yesterday: Completed OAuth config setup, started callback handler","Today: Continue callback handler implementation, target 80% done","Blockers: None","Mood: 🟢 Good","Notes: Found good reference implementation on GitHub"]}
+{"type":"entity","name":"Standup Update: 2026-01-14 Dev B","entityType":"StandupUpdate","observations":["Person: Dev B","Yesterday: Fixed CI pipeline, prepared test framework","Today: Wait for callback handler, review test cases with QA","Blockers: Waiting for Task: Implement OAuth callback handler","Mood: 🟡 Neutral","Notes: Using waiting time for documentation"]}
+{"type":"entity","name":"Standup Update: 2026-01-14 Dev C","entityType":"StandupUpdate","observations":["Person: Dev C","Yesterday: Completed password validation and bcrypt setup","Today: 50% maintenance work, start email service integration","Blockers: None","Mood: 🟢 Good","Notes: Email/Password login ready for code review"]}
+{"type":"entity","name":"Standup: 2026-01-13 Backend Squad","entityType":"Standup","observations":["Date: 2026-01-13","Time: 09:00 AM","Team: Backend Squad","Duration: 15 minutes","Attendees: Dev A, Dev B, Dev C, Tech Lead","Notes: First standup of Sprint-3, reviewed sprint goals"]}
+{"type":"entity","name":"Blocker: OAuth Callback Handler","entityType":"Blocker","observations":["Type: Dependency","Description: Dev B waiting for OAuth callback handler to write integration tests","Impact: Medium - 3h task blocked","Owner: Dev A","ETA: 2026-01-15 EOD","Workaround: Dev B working on documentation in meantime","Status: Active","Created: 2026-01-14"]}
+{"type":"relation","from":"Standup: 2026-01-14 Backend Squad","to":"Standup Update: 2026-01-14 Dev A","relationType":"contains"}
+{"type":"relation","from":"Standup: 2026-01-14 Backend Squad","to":"Standup Update: 2026-01-14 Dev B","relationType":"contains"}
+{"type":"relation","from":"Standup: 2026-01-14 Backend Squad","to":"Standup Update: 2026-01-14 Dev C","relationType":"contains"}
+{"type":"relation","from":"Standup Update: 2026-01-14 Dev A","to":"Dev A","relationType":"reported_by"}
+{"type":"relation","from":"Standup Update: 2026-01-14 Dev B","to":"Dev B","relationType":"reported_by"}
+{"type":"relation","from":"Standup Update: 2026-01-14 Dev C","to":"Dev C","relationType":"reported_by"}
+{"type":"relation","from":"Standup Update: 2026-01-14 Dev B","to":"Blocker: OAuth Callback Handler","relationType":"has_blocker"}
+{"type":"relation","from":"Blocker: OAuth Callback Handler","to":"Task: Write OAuth integration tests","relationType":"blocks"}
+{"type":"relation","from":"Blocker: OAuth Callback Handler","to":"Dev A","relationType":"owned_by"}
