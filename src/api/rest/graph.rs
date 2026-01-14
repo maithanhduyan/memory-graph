@@ -50,11 +50,9 @@ pub async fn get_graph(
     State(state): State<Arc<AppState>>,
     Query(params): Query<GraphParams>,
 ) -> impl IntoResponse {
-    let kb = state.kb.read().await;
-
     // Get all entities with pagination
-    let all_entities: Vec<Entity> = kb.graph.read().unwrap().entities.clone();
-    let all_relations: Vec<Relation> = kb.graph.read().unwrap().relations.clone();
+    let all_entities: Vec<Entity> = state.kb.graph.read().unwrap().entities.clone();
+    let all_relations: Vec<Relation> = state.kb.graph.read().unwrap().relations.clone();
 
     let total_entities = all_entities.len();
 
@@ -110,8 +108,7 @@ pub struct RelationTypeCount {
 }
 
 pub async fn get_stats(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    let kb = state.kb.read().await;
-    let graph = kb.graph.read().unwrap();
+    let graph = state.kb.graph.read().unwrap();
 
     // Count entity types
     let mut entity_type_counts: std::collections::HashMap<String, usize> =

@@ -40,8 +40,7 @@ pub async fn list_relations(
     State(state): State<Arc<AppState>>,
     Query(params): Query<ListRelationsParams>,
 ) -> impl IntoResponse {
-    let kb = state.kb.read().await;
-    let graph = kb.graph.read().unwrap();
+    let graph = state.kb.graph.read().unwrap();
 
     // Apply filters
     let mut relations: Vec<Relation> = graph
