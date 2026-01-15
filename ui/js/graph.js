@@ -28,7 +28,7 @@ function colorByType(type) {
 
 // Build graph from data
 function buildGraph(entities, relations, showObservations = false) {
-  const graph = new graphology.Graph();
+  const graph = new graphology.Graph({ multi: true });
   const entityTypes = new Set();
 
   entities.forEach(e => entityTypes.add(e.entityType));
