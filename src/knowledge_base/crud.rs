@@ -44,6 +44,9 @@ pub fn create_entities(kb: &KnowledgeBase, entities: Vec<Entity>) -> McpResult<V
             // Broadcast to WebSocket clients
             ws_helpers::entity_created(&entity, Some(kb.current_user.clone()));
 
+            // Update search index (Phase 1 optimization)
+            kb.index_entity(&entity);
+
             created.push(entity.clone());
             graph.entities.push(entity);
         }
@@ -158,6 +161,9 @@ pub fn add_observations(
                 entity.updated_at = now;
                 entity.updated_by = kb.current_user.clone();
 
+                // Update search index with new observations (Phase 1 optimization)
+                kb.reindex_entity(entity);
+
                 // Broadcast to WebSocket clients
                 ws_helpers::entity_updated(
                     &obs.entity_name,
@@ -200,6 +206,9 @@ pub fn delete_entities(kb: &KnowledgeBase, entity_names: Vec<String>) -> McpResu
             }
             // Broadcast to WebSocket clients
             ws_helpers::entity_deleted(name, Some(kb.current_user.clone()));
+
+            // Remove from search index (Phase 1 optimization)
+            kb.unindex_entity(name);
         }
     }
 
@@ -251,6 +260,9 @@ pub fn delete_observations(
 
             let to_remove: HashSet<String> = deletion.observations.into_iter().collect();
             entity.observations.retain(|o| !to_remove.contains(o));
+
+            // Update search index after removing observations (Phase 1 optimization)
+            kb.reindex_entity(entity);
         }
     }
 

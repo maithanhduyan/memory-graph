@@ -130,6 +130,7 @@ pub struct Relation {
 │     Approach    │    Effort     │     Capacity Gain         │
 ├─────────────────┼───────────────┼───────────────────────────┤
 │ HashMap Index   │ Low (1 week)  │ 2-5x throughput           │
+│ Search Index    │ Low (1 week)  │ 10-100x search speed      │
 │ Memory-Mapped   │ Medium (3 wk) │ 10-50x capacity           │
 │ Embedded DB     │ Medium (4 wk) │ 100x+ capacity            │
 │ Fine-grained    │ Medium (3 wk) │ N/A (throughput only)     │
@@ -161,6 +162,71 @@ pub struct KnowledgeGraph {
 - No new dependencies
 
 **Implementation Effort:** 1-2 weeks
+
+### 3.2.1 Search Index Enhancement
+
+**Inverted Index for Full-Text Search:**
+```rust
+pub struct SearchIndex {
+    /// word → Set<entity_name>
+    inverted_index: HashMap<String, HashSet<String>>,
+
+    /// entity_type → Set<entity_name>
+    type_index: HashMap<String, HashSet<String>>,
+
+    /// Bloom filter for quick rejection
+    bloom_filter: Bloom<String>,
+}
+
+impl SearchIndex {
+    pub fn search(&self, query: &str) -> Vec<String> {
+        // O(1) bloom filter check
+        if !self.bloom_filter.check(&query.to_lowercase()) {
+            return vec![];
+        }
+
+        // O(1) inverted index lookup
+        self.inverted_index
+            .get(&query.to_lowercase())
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .collect()
+    }
+}
+```
+
+**Pre-computed Synonym HashMap:**
+```rust
+use lazy_static::lazy_static;
+
+lazy_static! {
+    /// O(1) synonym lookup instead of O(groups × words)
+    static ref SYNONYM_MAP: HashMap<&'static str, &'static [&'static str]> = {
+        let mut map = HashMap::new();
+        for group in SYNONYM_GROUPS {
+            for &word in *group {
+                map.insert(word, *group);
+            }
+        }
+        map
+    };
+}
+
+pub fn get_synonyms_fast(query: &str) -> Vec<&'static str> {
+    SYNONYM_MAP.get(query.to_lowercase().as_str())
+        .map(|g| g.to_vec())
+        .unwrap_or_else(|| vec![])
+}
+```
+
+**Benefits:**
+- Full-text search: O(n×m) → O(1) with inverted index
+- Synonym lookup: O(groups) → O(1) with HashMap
+- Quick rejection: Bloom filter eliminates 99% non-matches instantly
+- Memory overhead: ~20-30% additional RAM for indices
+
+**Implementation Effort:** 1 week
 
 ### 3.3 Memory-Mapped Files (mmap)
 

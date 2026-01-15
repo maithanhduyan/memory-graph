@@ -7,6 +7,10 @@
 //!
 //! The knowledge base now supports Event Sourcing mode where all mutations
 //! are recorded as immutable events. Set `MEMORY_EVENT_SOURCING=true` to enable.
+//!
+//! # Search Optimization (Phase 1)
+//!
+//! Includes inverted index for O(1) entity lookups instead of O(n) linear scans.
 
 mod crud;
 pub mod inference;
@@ -21,6 +25,7 @@ use std::path::Path;
 use std::sync::{Mutex, RwLock};
 
 use crate::event_store::{EventStore, EventStoreConfig, LogRotation, SnapshotManager};
+use crate::search::SearchIndex;
 use crate::types::{
     Entity, EventType, KnowledgeGraph, McpResult, Observation, ObservationDeletion, PathStep,
     RelatedEntities, Relation, Summary, TraversalResult,
@@ -41,6 +46,8 @@ pub struct KnowledgeBase {
     pub(crate) log_rotation: Option<LogRotation>,
     /// Whether Event Sourcing mode is enabled
     pub(crate) event_sourcing_enabled: bool,
+    /// Search index for fast O(1) lookups (Phase 1 optimization)
+    pub(crate) search_index: RwLock<SearchIndex>,
 }
 
 impl KnowledgeBase {
@@ -82,6 +89,17 @@ impl KnowledgeBase {
     fn new_legacy(memory_file_path: String, current_user: String) -> Self {
         let graph = Self::load_graph_from_file(&memory_file_path).unwrap_or_default();
 
+        // Build search index from loaded graph
+        let search_index = SearchIndex::from_graph(&graph);
+        let index_stats = search_index.stats();
+
+        if index_stats.entity_count > 0 {
+            eprintln!(
+                "Search index built: {} entities, {} tokens, {} types",
+                index_stats.entity_count, index_stats.unique_tokens, index_stats.unique_types
+            );
+        }
+
         Self {
             memory_file_path,
             graph: RwLock::new(graph),
@@ -90,6 +108,7 @@ impl KnowledgeBase {
             snapshot_manager: None,
             log_rotation: None,
             event_sourcing_enabled: false,
+            search_index: RwLock::new(search_index),
         }
     }
 
@@ -118,10 +137,14 @@ impl KnowledgeBase {
 
         let graph = KnowledgeGraph { entities, relations };
 
+        // Build search index from loaded graph
+        let search_index = SearchIndex::from_graph(&graph);
+
         println!(
-            "Event Sourcing enabled: {} entities, {} relations",
+            "Event Sourcing enabled: {} entities, {} relations, index: {} tokens",
             graph.entities.len(),
-            graph.relations.len()
+            graph.relations.len(),
+            search_index.stats().unique_tokens
         );
 
         Self {
@@ -132,6 +155,7 @@ impl KnowledgeBase {
             snapshot_manager: Some(snapshot_manager),
             log_rotation: Some(log_rotation),
             event_sourcing_enabled: true,
+            search_index: RwLock::new(search_index),
         }
     }
 
@@ -161,6 +185,7 @@ impl KnowledgeBase {
             snapshot_manager: None,
             log_rotation: None,
             event_sourcing_enabled: false,
+            search_index: RwLock::new(SearchIndex::new()),
         }
     }
 
@@ -174,6 +199,7 @@ impl KnowledgeBase {
 
         let (entities, relations) = event_store.initialize().unwrap_or_default();
         let graph = KnowledgeGraph { entities, relations };
+        let search_index = SearchIndex::from_graph(&graph);
 
         Self {
             memory_file_path: data_dir.join("memory.jsonl").to_string_lossy().to_string(),
@@ -183,6 +209,7 @@ impl KnowledgeBase {
             snapshot_manager: Some(snapshot_manager),
             log_rotation: Some(log_rotation),
             event_sourcing_enabled: true,
+            search_index: RwLock::new(search_index),
         }
     }
 
@@ -260,6 +287,34 @@ impl KnowledgeBase {
     /// Check if Event Sourcing mode is enabled
     pub fn is_event_sourcing_enabled(&self) -> bool {
         self.event_sourcing_enabled
+    }
+
+    // ============= Search Index Methods (Phase 1 Optimization) =============
+
+    /// Update search index when entity is created
+    pub(crate) fn index_entity(&self, entity: &Entity) {
+        if let Ok(mut index) = self.search_index.write() {
+            index.index_entity(entity);
+        }
+    }
+
+    /// Update search index when entity is removed
+    pub(crate) fn unindex_entity(&self, entity_name: &str) {
+        if let Ok(mut index) = self.search_index.write() {
+            index.remove_entity(entity_name);
+        }
+    }
+
+    /// Update search index when entity is modified
+    pub(crate) fn reindex_entity(&self, entity: &Entity) {
+        if let Ok(mut index) = self.search_index.write() {
+            index.update_entity(entity);
+        }
+    }
+
+    /// Get search index statistics
+    pub fn search_index_stats(&self) -> Option<crate::search::IndexStats> {
+        self.search_index.read().ok().map(|idx| idx.stats())
     }
 
     /// Emit an event to the event store (if Event Sourcing is enabled)
